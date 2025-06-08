@@ -1,3 +1,4 @@
+// Vercel 재배포를 위한 주석
 import React, { useState, useEffect, useCallback } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, addDoc, getDocs, query, where, serverTimestamp, setLogLevel, deleteDoc, doc } from 'firebase/firestore';
