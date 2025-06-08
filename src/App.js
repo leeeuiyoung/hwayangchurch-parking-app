@@ -1,12 +1,22 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, addDoc, getDocs, query, where, serverTimestamp, setLogLevel, deleteDoc, doc } from 'firebase/firestore';
-import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
+import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { Save, Search, CalendarDays, Users, DollarSign, Clock, Building, Banknote, UserCircle, FileText, Trash2, AlertTriangle, ListChecks, Download, ChevronsUpDown, Check, X, Sparkles, Copy, Loader2, MapPin } from 'lucide-react';
 
-// Firebase 구성 (Vercel 환경 변수에서 가져오기)
-const firebaseConfig = JSON.parse(process.env.REACT_APP_FIREBASE_CONFIG);
-const appId = process.env.REACT_APP_ID || 'default-church-parking-app';
+// Firebase 구성 (Vercel 및 Canvas 환경 호환)
+const firebaseConfig =
+  typeof process !== "undefined" && process.env.REACT_APP_FIREBASE_CONFIG
+    ? JSON.parse(process.env.REACT_APP_FIREBASE_CONFIG)
+    : typeof __firebase_config !== "undefined"
+    ? JSON.parse(__firebase_config)
+    : {}; // Fallback to empty object
+
+const appId =
+  (typeof process !== "undefined" && process.env.REACT_APP_ID) ||
+  (typeof __app_id !== "undefined"
+    ? __app_id
+    : "default-church-parking-app");
 
 let app;
 let db;
@@ -16,7 +26,7 @@ try {
   app = initializeApp(firebaseConfig);
   db = getFirestore(app);
   auth = getAuth(app);
-  setLogLevel('debug'); 
+  setLogLevel('debug');
 } catch (error) {
   console.error("Firebase 초기화 오류:", error);
 }
@@ -25,18 +35,17 @@ const PARKING_LOCATIONS = [
   "어린이회관 주차장1", "어린이회관 주차장2", "세종대 대양AI센터 주차장",
   "국민은행 주차장", "교회 뒷편 세종대 주차장", "광진광장 공영주차장"
 ];
-const ALL_LOCATIONS_VALUE = "ALL_PARKING_LOCATIONS"; 
+const ALL_LOCATIONS_VALUE = "ALL_PARKING_LOCATIONS";
 
 const POSITIONS = ["청년", "성도", "집사", "권사", "장로", "목사"];
 const DEFAULT_HOURLY_RATE = 3000;
 const BANK_NAMES_RAW = [
-  "우리", "기업", "산업", "국민", "농협", "하나", "신한", 
+  "우리", "기업", "산업", "국민", "농협", "하나", "신한",
   "한국씨티", "토스뱅크", "케이뱅크", "카카오뱅크", "수협", "외환", "SC제일"
 ];
 const BANK_NAMES_WITH_OTHER = [...BANK_NAMES_RAW.sort((a, b) => a.localeCompare(b, 'ko-KR')), "기타"];
 
 const formInputOneUI = "block w-full px-5 py-3.5 text-base text-slate-800 bg-slate-100 border-2 border-slate-200 rounded-xl transition duration-150 ease-in-out placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:bg-white hover:border-slate-300";
-
 
 function App() {
   const [currentPage, setCurrentPage] = useState('entry');
@@ -45,9 +54,7 @@ function App() {
   const [authError, setAuthError] = useState(null);
   const [dbError, setDbError] = useState(null);
   const [lastEnteredParkingDate, setLastEnteredParkingDate] = useState(new Date().toISOString().split('T')[0]);
-  // 마지막으로 입력된 주차 장소를 App 레벨에서 관리
   const [lastEnteredParkingLocation, setLastEnteredParkingLocation] = useState(PARKING_LOCATIONS[0]);
-
 
   useEffect(() => {
     if (!auth) {
@@ -62,13 +69,13 @@ function App() {
         setAuthError(null);
       } else {
         try {
-          Vercel 환경에서는 항상 익명 로그인을 사용합니다.
-            await signInAnonymously(auth);
+          // Vercel 환경에서는 항상 익명 로그인을 사용합니다.
+          await signInAnonymously(auth);
         } catch (error) {
           console.error("Firebase 로그인 오류:", error);
           setAuthError(`로그인 실패: ${error.message}`);
-          setUserId(null); 
-          setIsAuthReady(true); 
+          setUserId(null);
+          setIsAuthReady(true);
         }
       }
     });
@@ -89,21 +96,21 @@ function App() {
       </div>
     );
   }
-  if (authError && !userId) { 
+  if (authError && !userId) {
     return <div className="p-6 text-red-700 bg-red-100 rounded-xl shadow-lg max-w-lg mx-auto mt-12 text-center"><strong>인증 오류</strong><p className="mt-2 text-sm">{authError}</p></div>;
   }
 
   const navigationButtons = (
     <nav className="flex space-x-3">
-      <button 
-        onClick={() => setCurrentPage('entry')} 
+      <button
+        onClick={() => setCurrentPage('entry')}
         className={`flex items-center justify-center px-6 py-3.5 rounded-xl text-base font-semibold transition-all duration-200 ease-in-out focus:outline-none focus:ring-4 focus:ring-offset-1
                     ${currentPage === 'entry' ? 'bg-blue-600 text-white shadow-lg hover:bg-blue-700 focus:ring-blue-400' : 'bg-slate-200 text-slate-800 hover:bg-slate-300 focus:ring-slate-400'}`}
       >
         <FileText className="w-5 h-5 mr-2.5" />입력
       </button>
-      <button 
-        onClick={() => setCurrentPage('query')} 
+      <button
+        onClick={() => setCurrentPage('query')}
         className={`flex items-center justify-center px-6 py-3.5 rounded-xl text-base font-semibold transition-all duration-200 ease-in-out focus:outline-none focus:ring-4 focus:ring-offset-1
                     ${currentPage === 'query' ? 'bg-blue-600 text-white shadow-lg hover:bg-blue-700 focus:ring-blue-400' : 'bg-slate-200 text-slate-800 hover:bg-slate-300 focus:ring-slate-400'}`}
       >
@@ -123,14 +130,14 @@ function App() {
         </div>
       </header>
       <main className="container mx-auto p-4 sm:p-6 lg:p-8 flex-grow w-full">
-        {currentPage === 'entry' && 
-            <EntryForm 
-                db={db} 
-                userId={userId} 
-                isAuthReady={isAuthReady} 
+        {currentPage === 'entry' &&
+            <EntryForm
+                db={db}
+                userId={userId}
+                isAuthReady={isAuthReady}
                 setDbError={setDbError}
                 lastEnteredParkingDateFromApp={lastEnteredParkingDate}
-                setLastEnteredParkingDateInApp={setLastEnteredParkingDate} 
+                setLastEnteredParkingDateInApp={setLastEnteredParkingDate}
                 lastEnteredParkingLocationFromApp={lastEnteredParkingLocation}
                 setLastEnteredParkingLocationInApp={setLastEnteredParkingLocation}
             />}
@@ -147,15 +154,15 @@ function App() {
   );
 }
 
-function EntryForm({ 
-    db, 
-    userId, 
-    isAuthReady, 
-    setDbError, 
-    lastEnteredParkingDateFromApp, 
+function EntryForm({
+    db,
+    userId,
+    isAuthReady,
+    setDbError,
+    lastEnteredParkingDateFromApp,
     setLastEnteredParkingDateInApp,
     lastEnteredParkingLocationFromApp,
-    setLastEnteredParkingLocationInApp 
+    setLastEnteredParkingLocationInApp
 }) {
   const [parkingLocation, setParkingLocation] = useState(lastEnteredParkingLocationFromApp || PARKING_LOCATIONS[0]);
   const [parkingDate, setParkingDate] = useState(lastEnteredParkingDateFromApp || new Date().toISOString().split('T')[0]);
@@ -164,13 +171,13 @@ function EntryForm({
   const [selectedBank, setSelectedBank] = useState(BANK_NAMES_WITH_OTHER[0]);
   const [customBankName, setCustomBankName] = useState('');
   const [accountNumber, setAccountNumber] = useState('');
-  const [parkingDurationOption, setParkingDurationOption] = useState('4'); 
-  const [customDuration, setCustomDuration] = useState(''); 
+  const [parkingDurationOption, setParkingDurationOption] = useState('4');
+  const [customDuration, setCustomDuration] = useState('');
   const [hourlyRate, setHourlyRate] = useState(DEFAULT_HOURLY_RATE.toString());
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
 
-  const [allUserRecords, setAllUserRecords] = useState([]); 
+  const [allUserRecords, setAllUserRecords] = useState([]);
   const [nameSuggestions, setNameSuggestions] = useState([]);
   const [showNameSuggestions, setShowNameSuggestions] = useState(false);
   const [accountInfoSuggestions, setAccountInfoSuggestions] = useState([]);
@@ -181,14 +188,14 @@ function EntryForm({
       const fetchParkingRecords = async () => {
         try {
           const recordsRef = collection(db, `/artifacts/${appId}/public/data/parkingRecords`);
-          const q = query(recordsRef); 
+          const q = query(recordsRef);
           const querySnapshot = await getDocs(q);
           const records = [];
           querySnapshot.forEach(doc => records.push({ id: doc.id, ...doc.data() }));
 
           const latestUserRecords = {};
           records.forEach(record => {
-            if (!latestUserRecords[record.name] || 
+            if (!latestUserRecords[record.name] ||
                 new Date(record.createdAt?.toDate() || record.parkingDate) > new Date(latestUserRecords[record.name].createdAt?.toDate() || latestUserRecords[record.name].parkingDate)) {
               latestUserRecords[record.name] = record;
             }
@@ -201,7 +208,7 @@ function EntryForm({
       };
       fetchParkingRecords();
     }
-  }, [db, userId, isAuthReady, appId, setDbError]);
+  }, [db, userId, isAuthReady, setDbError, appId]);
 
 
   const handleNameChange = (e) => {
@@ -211,8 +218,8 @@ function EntryForm({
       const suggestions = allUserRecords
         .filter(record => record.name.toLowerCase().includes(value.toLowerCase()))
         .map(record => record.name)
-        .filter((v, i, a) => a.indexOf(v) === i); 
-      setNameSuggestions(suggestions.slice(0, 5)); 
+        .filter((v, i, a) => a.indexOf(v) === i);
+      setNameSuggestions(suggestions.slice(0, 5));
       setShowNameSuggestions(true);
     } else {
       setShowNameSuggestions(false);
@@ -238,7 +245,7 @@ function EntryForm({
       }
     }
   };
-  
+
   const handleAccountNumberChange = (e) => {
     const rawValue = e.target.value;
     const numericValue = rawValue.replace(/-/g, '');
@@ -253,9 +260,9 @@ function EntryForm({
           }
           return false;
         })
-        .map(record => record.accountInfo) 
-        .filter((v, i, a) => a.indexOf(v) === i) 
-        .slice(0, 5); 
+        .map(record => record.accountInfo)
+        .filter((v, i, a) => a.indexOf(v) === i)
+        .slice(0, 5);
       setAccountInfoSuggestions(suggestions);
       setShowAccountInfoSuggestions(true);
     } else {
@@ -305,10 +312,10 @@ function EntryForm({
     if (selectedBank === '기타' && !finalBankName) {
       setMessage({ type: 'error', text: '기타 은행명을 입력해주세요.' }); setIsLoading(false); return;
     }
-    if (!accountNumber.trim()) { 
+    if (!accountNumber.trim()) {
       setMessage({ type: 'error', text: '계좌번호를 입력해주세요.' }); setIsLoading(false); return;
     }
-    const accountInfoString = `${finalBankName}/${accountNumber.trim()}`; 
+    const accountInfoString = `${finalBankName}/${accountNumber.trim()}`;
     const newRecord = {
       appId, userId, parkingLocation, parkingDate, name: name.trim(), position, accountInfo: accountInfoString,
       parkingDurationHours: durationHours, isCustomDuration: parkingDurationOption === 'custom',
@@ -318,25 +325,23 @@ function EntryForm({
     try {
       await addDoc(collection(db, `/artifacts/${appId}/public/data/parkingRecords`), newRecord);
       setMessage({ type: 'success', text: '데이터가 성공적으로 저장되었습니다.' });
-      
-      setLastEnteredParkingDateInApp(parkingDate);
-      setLastEnteredParkingLocationInApp(parkingLocation); // 마지막 주차 장소 업데이트
 
-      // parkingLocation과 parkingDate는 현재 값(방금 입력한 값) 유지
-      // setParkingLocation(PARKING_LOCATIONS[0]); // 이 줄 제거
-      setName(''); 
-      setPosition(POSITIONS[0]); 
+      setLastEnteredParkingDateInApp(parkingDate);
+      setLastEnteredParkingLocationInApp(parkingLocation);
+
+      setName('');
+      setPosition(POSITIONS[0]);
       setSelectedBank(BANK_NAMES_WITH_OTHER[0]);
-      setCustomBankName(''); 
-      setAccountNumber(''); 
-      setParkingDurationOption('4'); 
-      setCustomDuration(''); 
+      setCustomBankName('');
+      setAccountNumber('');
+      setParkingDurationOption('4');
+      setCustomDuration('');
       setHourlyRate(DEFAULT_HOURLY_RATE.toString());
-      
-      const updatedUserRecord = { ...newRecord, createdAt: new Date() }; 
+
+      const updatedUserRecord = { ...newRecord, createdAt: new Date() };
       setAllUserRecords(prevRecords => {
           const latestUserRecords = {...prevRecords.reduce((acc, rec) => ({...acc, [rec.name]: rec}), {})};
-          if (!latestUserRecords[updatedUserRecord.name] || 
+          if (!latestUserRecords[updatedUserRecord.name] ||
               new Date(updatedUserRecord.createdAt) > new Date(latestUserRecords[updatedUserRecord.name].createdAt?.toDate() || latestUserRecords[updatedUserRecord.name].parkingDate)) {
             latestUserRecords[updatedUserRecord.name] = updatedUserRecord;
           }
@@ -385,21 +390,21 @@ function EntryForm({
             {selectedBank === '기타' && <div><label htmlFor="customBankName" className="block text-sm font-medium text-slate-600 mb-2">은행명 직접 입력</label><input type="text" id="customBankName" value={customBankName} onChange={(e) => setCustomBankName(e.target.value)} placeholder="은행명을 입력하세요" className={formInputOneUI} required={selectedBank === '기타'} /></div>}
             <div className="relative">
                 <label htmlFor="accountNumber" className="block text-sm font-medium text-slate-600 mb-2">계좌번호</label>
-                <input 
-                    type="text" 
-                    id="accountNumber" 
-                    value={accountNumber} 
-                    onChange={handleAccountNumberChange} 
-                    onClick={(e) => e.stopPropagation()} 
-                    placeholder="계좌번호를 입력하세요 (-는 자동으로 제거됩니다)" 
-                    className={formInputOneUI} 
-                    required 
+                <input
+                    type="text"
+                    id="accountNumber"
+                    value={accountNumber}
+                    onChange={handleAccountNumberChange}
+                    onClick={(e) => e.stopPropagation()}
+                    placeholder="계좌번호를 입력하세요 (-는 자동으로 제거됩니다)"
+                    className={formInputOneUI}
+                    required
                 />
                 {showAccountInfoSuggestions && accountInfoSuggestions.length > 0 && (
                 <ul className="absolute z-20 w-full bg-white border-2 border-slate-200 rounded-xl mt-1.5 max-h-56 overflow-y-auto shadow-xl">
                     {accountInfoSuggestions.map((suggestion, index) => (
                     <li key={index} onClick={() => handleAccountInfoSuggestionClick(suggestion)} className="px-6 py-3.5 hover:bg-slate-100 cursor-pointer text-base text-slate-700">
-                        {suggestion} 
+                        {suggestion}
                     </li>
                     ))}
                 </ul>
@@ -424,10 +429,10 @@ function EntryForm({
   );
 }
 
-const FormItem = ({ icon: IconComponent, label, children }) => ( 
+const FormItem = ({ icon: IconComponent, label, children }) => (
   <div>
     <label className="block text-lg font-semibold text-slate-700 mb-3 flex items-center">
-      {IconComponent && <IconComponent className="w-7 h-7 text-slate-500 mr-3.5" /> } 
+      {IconComponent && <IconComponent className="w-7 h-7 text-slate-500 mr-3.5" /> }
       {label}
     </label>
     {children}
@@ -439,11 +444,11 @@ function QueryPage({ db, userId, isAuthReady, setDbError }) {
   const [searchName, setSearchName] = useState('');
   const [searchStartDate, setSearchStartDate] = useState('');
   const [searchEndDate, setSearchEndDate] = useState('');
-  const [searchParkingLocation, setSearchParkingLocation] = useState(ALL_LOCATIONS_VALUE); 
+  const [searchParkingLocation, setSearchParkingLocation] = useState(ALL_LOCATIONS_VALUE);
   const [results, setResults] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [totalFee, setTotalFee] = useState(0);
-  const [nameAccountTotals, setNameAccountTotals] = useState({}); 
+  const [nameAccountTotals, setNameAccountTotals] = useState({});
   const [message, setMessage] = useState('');
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [itemToDelete, setItemToDelete] = useState(null);
@@ -535,9 +540,9 @@ function QueryPage({ db, userId, isAuthReady, setDbError }) {
       let chatHistory = [];
       chatHistory.push({ role: "user", parts: [{ text: prompt }] });
       const payload = { contents: chatHistory };
-      const apiKey = ""; 
+      const apiKey = "";
       const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-      
+
       const response = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -568,7 +573,7 @@ function QueryPage({ db, userId, isAuthReady, setDbError }) {
       setIsAiLoading(false);
     }
   };
-  
+
   const copyToClipboard = (text) => {
     const textArea = document.createElement("textarea");
     textArea.value = text;
@@ -580,7 +585,7 @@ function QueryPage({ db, userId, isAuthReady, setDbError }) {
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
       console.error('클립보드 복사 실패:', err);
-      setAiError('클립보드 복사에 실패했습니다.'); 
+      setAiError('클립보드 복사에 실패했습니다.');
     }
     document.body.removeChild(textArea);
   };
@@ -601,7 +606,7 @@ function QueryPage({ db, userId, isAuthReady, setDbError }) {
       return;
     }
     const headers = ["날짜", "이름", "직분", "주차장소", "주차시간(시간)", "시간당요금(원)", "계산된요금(원)", "계좌정보"];
-    let csvContent = "\uFEFF" + headers.join(",") + "\r\n"; 
+    let csvContent = "\uFEFF" + headers.join(",") + "\r\n";
     results.forEach(record => {
       const row = [
         record.parkingDate, record.name, record.position, record.parkingLocation,
@@ -644,18 +649,18 @@ function QueryPage({ db, userId, isAuthReady, setDbError }) {
       setMessage('데이터베이스 연결이 준비되지 않았습니다.'); return;
     }
     setIsLoading(true);
-    if (!keepCurrentResults) { 
-        setResults([]); 
-        setTotalFee(0); 
-        setNameAccountTotals({}); 
-        setPeriodTopLocation(''); 
+    if (!keepCurrentResults) {
+        setResults([]);
+        setTotalFee(0);
+        setNameAccountTotals({});
+        setPeriodTopLocation('');
         setIndividualTopLocation('');
-    } 
+    }
     setMessage(''); setDeleteMessage({ type: '', text: '' });
 
     try {
       const parkingRecordsRef = collection(db, `/artifacts/${appId}/public/data/parkingRecords`);
-      let q = query(parkingRecordsRef); 
+      let q = query(parkingRecordsRef);
 
       if (searchStartDate) {
         q = query(q, where("parkingDate", ">=", searchStartDate));
@@ -669,20 +674,20 @@ function QueryPage({ db, userId, isAuthReady, setDbError }) {
       if (searchName.trim()) {
         q = query(q, where("name", "==", searchName.trim()));
       }
-      
+
       const querySnapshot = await getDocs(q);
       let fetchedRecords = [];
       querySnapshot.forEach((doc) => fetchedRecords.push({ id: doc.id, ...doc.data() }));
-      
+
       const sortedDetailedResults = [...fetchedRecords].sort((a, b) => {
         const nameCompare = a.name.localeCompare(b.name, 'ko-KR');
         if (nameCompare !== 0) return nameCompare;
-        return new Date(b.parkingDate) - new Date(a.parkingDate); 
+        return new Date(b.parkingDate) - new Date(a.parkingDate);
       });
       setResults(sortedDetailedResults);
 
       const currentNameAccountTotals = fetchedRecords.reduce((acc, record) => {
-        const key = `${record.name} | ${record.accountInfo}`; 
+        const key = `${record.name} | ${record.accountInfo}`;
         if (!acc[key]) {
           acc[key] = { name: record.name, accountInfo: record.accountInfo, totalFee: 0 };
         }
@@ -690,7 +695,7 @@ function QueryPage({ db, userId, isAuthReady, setDbError }) {
         return acc;
       }, {});
       setNameAccountTotals(currentNameAccountTotals);
-      
+
       let currentTotalFee = 0;
       fetchedRecords.forEach(record => currentTotalFee += (record.calculatedFee || 0));
       setTotalFee(currentTotalFee);
@@ -700,7 +705,7 @@ function QueryPage({ db, userId, isAuthReady, setDbError }) {
         const userSpecificRecords = fetchedRecords.filter(r => r.name === searchName.trim());
         setIndividualTopLocation(getTopParkingLocationsHelper(userSpecificRecords, 1));
       } else {
-        setIndividualTopLocation(''); 
+        setIndividualTopLocation('');
       }
 
 
@@ -727,7 +732,7 @@ function QueryPage({ db, userId, isAuthReady, setDbError }) {
     try {
       await deleteDoc(doc(db, `/artifacts/${appId}/public/data/parkingRecords`, itemToDelete));
       setDeleteMessage({ type: 'success', text: '항목이 성공적으로 삭제되었습니다.'});
-      
+
       const updatedResults = results.filter(r => r.id !== itemToDelete);
       setResults(updatedResults);
 
@@ -741,7 +746,7 @@ function QueryPage({ db, userId, isAuthReady, setDbError }) {
         currentTotalFee += (record.calculatedFee || 0);
         return acc;
       }, {});
-      setTotalFee(currentTotalFee); 
+      setTotalFee(currentTotalFee);
       setNameAccountTotals(updatedNameAccountTotals);
 
       setPeriodTopLocation(getTopParkingLocationsHelper(updatedResults, 1));
@@ -752,7 +757,7 @@ function QueryPage({ db, userId, isAuthReady, setDbError }) {
         setIndividualTopLocation('');
       }
 
-      setItemToDelete(null); 
+      setItemToDelete(null);
     } catch (error) {
       console.error("데이터 삭제 오류: ", error);
       setDeleteMessage({ type: 'error', text: `삭제 오류: ${error.message}` });
@@ -761,7 +766,7 @@ function QueryPage({ db, userId, isAuthReady, setDbError }) {
       setIsLoading(false);
     }
   };
-  
+
   return (
     <div className="space-y-12">
       <div className="bg-white p-8 sm:p-12 rounded-3xl shadow-2xl">
@@ -798,9 +803,9 @@ function QueryPage({ db, userId, isAuthReady, setDbError }) {
           </button>
         </div>
         <div className="mt-5">
-            <button 
-                onClick={handleAiAnalysis} 
-                disabled={results.length === 0 || isLoading || isAiLoading} 
+            <button
+                onClick={handleAiAnalysis}
+                disabled={results.length === 0 || isLoading || isAiLoading}
                 className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-4 px-6 rounded-xl shadow-lg transition-all duration-150 ease-in-out flex items-center justify-center disabled:opacity-70 focus:outline-none focus:ring-4 focus:ring-offset-2 focus:ring-purple-300 text-lg"
             >
                 {isAiLoading ? <Loader2 className="animate-spin -ml-1 mr-3 h-6 w-6 text-white" /> : <Sparkles className="w-6 h-6 mr-3" />}
@@ -823,11 +828,11 @@ function QueryPage({ db, userId, isAuthReady, setDbError }) {
         <div className="bg-white p-8 sm:p-10 rounded-2xl shadow-xl mb-10">
           <h2 className="text-2xl font-semibold text-slate-800 mb-8 flex items-center"><ListChecks size={30} className="mr-4 text-blue-600" />이름 및 계좌별 합계</h2>
           <ul className="space-y-5">
-            {Object.values(nameAccountTotals) 
+            {Object.values(nameAccountTotals)
               .sort((a, b) => {
                 const nameCompare = a.name.localeCompare(b.name, 'ko-KR');
                 if (nameCompare !== 0) return nameCompare;
-                return a.accountInfo.localeCompare(b.accountInfo); 
+                return a.accountInfo.localeCompare(b.accountInfo);
               })
               .map((data) => (
               <li key={`${data.name}-${data.accountInfo}`} className="p-6 border border-slate-200 rounded-xl hover:shadow-lg transition-shadow duration-200 bg-slate-50">
@@ -915,16 +920,16 @@ function QueryPage({ db, userId, isAuthReady, setDbError }) {
             
             <div className="flex flex-col sm:flex-row justify-end space-y-3 sm:space-y-0 sm:space-x-4 pt-6 border-t border-slate-200">
               {!isAiLoading && aiSummary && (
-                 <button 
-                    onClick={() => copyToClipboard(aiSummary)} 
+                 <button
+                    onClick={() => copyToClipboard(aiSummary)}
                     className="px-6 py-3 text-base font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors flex items-center justify-center focus:outline-none focus:ring-4 focus:ring-offset-2 focus:ring-blue-300"
                   >
                     <Copy size={18} className="mr-2.5" />
                     {copied ? '복사 완료!' : '요약 복사하기'}
                   </button>
               )}
-              <button 
-                onClick={() => setShowAiSummaryModal(false)} 
+              <button
+                onClick={() => setShowAiSummaryModal(false)}
                 className="px-6 py-3 text-base font-medium text-slate-700 bg-slate-200 hover:bg-slate-300 rounded-xl transition-colors focus:outline-none focus:ring-4 focus:ring-offset-2 focus:ring-slate-300"
               >
                 닫기
@@ -941,4 +946,3 @@ const Th = ({ children, className = '' }) => <th scope="col" className={`px-6 py
 const Td = ({ children, className = '' }) => <td className={`px-6 py-5 whitespace-nowrap text-base text-slate-700 ${className}`}>{children}</td>;
 
 export default App;
-
