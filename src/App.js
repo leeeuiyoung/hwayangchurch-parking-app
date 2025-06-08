@@ -9,12 +9,14 @@ const firebaseConfig =
   typeof process !== "undefined" && process.env.REACT_APP_FIREBASE_CONFIG
     ? JSON.parse(process.env.REACT_APP_FIREBASE_CONFIG)
     : typeof __firebase_config !== "undefined"
+    // eslint-disable-next-line no-undef
     ? JSON.parse(__firebase_config)
     : {}; // Fallback to empty object
 
 const appId =
   (typeof process !== "undefined" && process.env.REACT_APP_ID) ||
   (typeof __app_id !== "undefined"
+    // eslint-disable-next-line no-undef
     ? __app_id
     : "default-church-parking-app");
 
