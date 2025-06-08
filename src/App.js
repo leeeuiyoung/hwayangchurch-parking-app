@@ -1,9 +1,9 @@
 // Vercel 재배포를 위한 주석
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, addDoc, getDocs, query, where, serverTimestamp, setLogLevel, deleteDoc, doc } from 'firebase/firestore';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { Save, Search, CalendarDays, Users, DollarSign, Clock, Building, Banknote, UserCircle, FileText, Trash2, AlertTriangle, ListChecks, Download, ChevronsUpDown, Check, X, Sparkles, Copy, Loader2, MapPin } from 'lucide-react';
+import { Save, Search, CalendarDays, Users, DollarSign, Clock, Building, Banknote, UserCircle, FileText, Trash2, AlertTriangle, ListChecks, Download, X, Sparkles, Copy, Loader2 } from 'lucide-react';
 
 // Firebase 구성 (Vercel 및 Canvas 환경 호환)
 const firebaseConfig =
@@ -26,10 +26,14 @@ let db;
 let auth;
 
 try {
-  app = initializeApp(firebaseConfig);
-  db = getFirestore(app);
-  auth = getAuth(app);
-  setLogLevel('debug');
+  if (Object.keys(firebaseConfig).length > 0) {
+    app = initializeApp(firebaseConfig);
+    db = getFirestore(app);
+    auth = getAuth(app);
+    setLogLevel('debug');
+  } else {
+    throw new Error("Firebase config is empty.");
+  }
 } catch (error) {
   console.error("Firebase 초기화 오류:", error);
 }
@@ -72,7 +76,6 @@ function App() {
         setAuthError(null);
       } else {
         try {
-          // Vercel 환경에서는 항상 익명 로그인을 사용합니다.
           await signInAnonymously(auth);
         } catch (error) {
           console.error("Firebase 로그인 오류:", error);
@@ -85,9 +88,6 @@ function App() {
     return () => unsubscribe();
   }, []);
 
-  if (dbError) {
-    return <div className="p-6 text-red-700 bg-red-100 rounded-xl shadow-lg max-w-lg mx-auto mt-12 text-center"><strong>데이터베이스 오류</strong><p className="mt-2 text-sm">{dbError}</p></div>;
-  }
   if (!isAuthReady) {
     return (
       <div className="flex justify-center items-center min-h-screen bg-slate-100">
@@ -102,6 +102,10 @@ function App() {
   if (authError && !userId) {
     return <div className="p-6 text-red-700 bg-red-100 rounded-xl shadow-lg max-w-lg mx-auto mt-12 text-center"><strong>인증 오류</strong><p className="mt-2 text-sm">{authError}</p></div>;
   }
+   if (dbError) {
+    return <div className="p-6 text-red-700 bg-red-100 rounded-xl shadow-lg max-w-lg mx-auto mt-12 text-center"><strong>데이터베이스 오류</strong><p className="mt-2 text-sm">{dbError}</p></div>;
+  }
+
 
   const navigationButtons = (
     <nav className="flex space-x-3">
@@ -211,7 +215,7 @@ function EntryForm({
       };
       fetchParkingRecords();
     }
-  }, [db, userId, isAuthReady, setDbError, appId]);
+  }, [db, userId, isAuthReady, setDbError]);
 
 
   const handleNameChange = (e) => {
