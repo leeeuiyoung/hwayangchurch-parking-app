@@ -19,7 +19,8 @@ try {
     auth = getAuth(app);
     setLogLevel('debug');
   } else {
-    throw new Error("Firebase config is invalid or missing from environment variables.");
+    // Vercel 환경 변수가 없을 때 이 오류가 발생할 수 있습니다.
+    console.error("Firebase config is invalid or missing from environment variables.");
   }
 } catch (error) {
   console.error("Firebase 초기화 오류:", error);
