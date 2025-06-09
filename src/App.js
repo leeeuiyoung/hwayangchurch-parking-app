@@ -5,11 +5,16 @@ import { getFirestore, collection, addDoc, getDocs, query, where, serverTimestam
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { Save, Search, CalendarDays, Users, DollarSign, Clock, Building, Banknote, UserCircle, FileText, Trash2, AlertTriangle, ListChecks, Download, X, Sparkles, Copy, Loader2 } from 'lucide-react';
 
-// 디버깅을 위해 Vercel 환경 변수를 브라우저 콘솔에 출력합니다.
-// 이 코드는 배포 후 웹사이트에서 F12를 눌러 콘솔을 확인하기 위함입니다.
-if (typeof process !== 'undefined' && process.env.NODE_ENV === 'production') {
-  console.log("Reading Vercel ENV Var:", process.env.REACT_APP_FIREBASE_CONFIG);
+// --- 디버깅 코드 시작 ---
+console.log("--- START DEBUG ---");
+console.log("Is process defined?", typeof process !== 'undefined');
+if (typeof process !== 'undefined') {
+    console.log("Vercel ENV Var Content:", process.env.REACT_APP_FIREBASE_CONFIG);
+    console.log("Vercel NODE_ENV:", process.env.NODE_ENV);
 }
+console.log("--- END DEBUG ---");
+// --- 디버깅 코드 끝 ---
+
 
 // Firebase 구성 (Vercel 및 Canvas 환경 호환)
 const firebaseConfig =
@@ -958,4 +963,4 @@ function QueryPage({ db, userId, isAuthReady, setDbError }) {
 const Th = ({ children, className = '' }) => <th scope="col" className={`px-6 py-4 text-left text-sm font-semibold text-slate-600 uppercase tracking-wider ${className}`}>{children}</th>;
 const Td = ({ children, className = '' }) => <td className={`px-6 py-5 whitespace-nowrap text-base text-slate-700 ${className}`}>{children}</td>;
 
-export default App;
+export default A
