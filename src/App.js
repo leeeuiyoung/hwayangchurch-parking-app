@@ -4,18 +4,9 @@ import { getFirestore, collection, addDoc, getDocs, query, where, serverTimestam
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { Save, Search, CalendarDays, Users, DollarSign, Clock, Building, Banknote, UserCircle, FileText, Trash2, AlertTriangle, ListChecks, Download, X, Sparkles, Copy, Loader2 } from 'lucide-react';
 
-// --- 최종 테스트를 위해 Firebase 설정을 직접 코드에 입력합니다. ---
-// 이 방법은 보안상 좋지 않지만, 문제의 원인을 확실히 찾기 위한 테스트입니다.
-const firebaseConfig = {
-    "apiKey":"AIzaSyB8mujwEnMA0oynk5liia3QXPMWGQyPRfs",
-    "authDomain":"hwayangchurch-parking-app.firebaseapp.com",
-    "projectId":"hwayangchurch-parking-app",
-    "storageBucket":"hwayangchurch-parking-app.appspot.com",
-    "messagingSenderId":"104913357347",
-    "appId":"1:104913357347:web:e3054f97d1d63b97cf7f96"
-};
-
-const appId = "my-church-parking";
+// Vercel 배포를 위해 환경 변수에서 Firebase 설정을 가져옵니다.
+const firebaseConfig = JSON.parse(process.env.REACT_APP_FIREBASE_CONFIG || '{}');
+const appId = process.env.REACT_APP_ID || 'default-church-parking-app';
 
 let app;
 let db;
@@ -28,7 +19,7 @@ try {
     auth = getAuth(app);
     setLogLevel('debug');
   } else {
-    throw new Error("Firebase config is invalid or missing.");
+    throw new Error("Firebase config is invalid or missing from environment variables.");
   }
 } catch (error) {
   console.error("Firebase 초기화 오류:", error);
@@ -88,7 +79,7 @@ function App() {
       return (
           <div className="p-6 text-red-700 bg-red-100 rounded-xl shadow-lg max-w-lg mx-auto mt-12 text-center">
               <strong>Firebase 초기화 실패</strong>
-              <p className="mt-2 text-sm">Firebase 설정에 문제가 있어 앱을 시작할 수 없습니다. 관리자에게 문의하세요.</p>
+              <p className="mt-2 text-sm">Firebase 설정에 문제가 있어 앱을 시작할 수 없습니다. Vercel 환경 변수를 확인해주세요.</p>
           </div>
       );
   }
@@ -107,7 +98,7 @@ function App() {
   if (authError && !userId) {
     return <div className="p-6 text-red-700 bg-red-100 rounded-xl shadow-lg max-w-lg mx-auto mt-12 text-center"><strong>인증 오류</strong><p className="mt-2 text-sm">{authError}</p></div>;
   }
-   if (dbError) {
+  if (dbError) {
     return <div className="p-6 text-red-700 bg-red-100 rounded-xl shadow-lg max-w-lg mx-auto mt-12 text-center"><strong>데이터베이스 오류</strong><p className="mt-2 text-sm">{dbError}</p></div>;
   }
 
@@ -763,7 +754,7 @@ function QueryPage({ db, userId, isAuthReady, setDbError }) {
 
       setPeriodTopLocation(getTopParkingLocationsHelper(updatedResults, 1));
       if (searchName.trim()) {
-        const userSpecificRecords = updatedResults.filter(r => r.name === searchName.trim());
+        const userSpecificRecords = fetchedRecords.filter(r => r.name === searchName.trim());
         setIndividualTopLocation(getTopParkingLocationsHelper(userSpecificRecords, 1));
       } else {
         setIndividualTopLocation('');
