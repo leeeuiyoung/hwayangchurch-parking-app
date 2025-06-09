@@ -4,34 +4,31 @@ import { getFirestore, collection, addDoc, getDocs, query, where, serverTimestam
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { Save, Search, CalendarDays, Users, DollarSign, Clock, Building, Banknote, UserCircle, FileText, Trash2, AlertTriangle, ListChecks, Download, X, Sparkles, Copy, Loader2 } from 'lucide-react';
 
-// Firebase 구성 (Vercel 및 Canvas 환경 호환)
-const firebaseConfig =
-  typeof process !== "undefined" && process.env.REACT_APP_FIREBASE_CONFIG
-    ? JSON.parse(process.env.REACT_APP_FIREBASE_CONFIG)
-    : typeof __firebase_config !== "undefined"
-    // eslint-disable-next-line no-undef
-    ? JSON.parse(__firebase_config)
-    : {}; // Fallback to empty object
+// --- 최종 테스트를 위해 Firebase 설정을 직접 코드에 입력합니다. ---
+// 이 방법은 보안상 좋지 않지만, 문제의 원인을 확실히 찾기 위한 테스트입니다.
+const firebaseConfig = {
+    "apiKey":"AIzaSyB8mujwEnMA0oynk5liia3QXPMWGQyPRfs",
+    "authDomain":"hwayangchurch-parking-app.firebaseapp.com",
+    "projectId":"hwayangchurch-parking-app",
+    "storageBucket":"hwayangchurch-parking-app.appspot.com",
+    "messagingSenderId":"104913357347",
+    "appId":"1:104913357347:web:e3054f97d1d63b97cf7f96"
+};
 
-const appId =
-  (typeof process !== "undefined" && process.env.REACT_APP_ID) ||
-  (typeof __app_id !== "undefined"
-    // eslint-disable-next-line no-undef
-    ? __app_id
-    : "default-church-parking-app");
+const appId = "my-church-parking";
 
 let app;
 let db;
 let auth;
 
 try {
-  if (Object.keys(firebaseConfig).length > 0) {
+  if (Object.keys(firebaseConfig).length > 0 && firebaseConfig.projectId) {
     app = initializeApp(firebaseConfig);
     db = getFirestore(app);
     auth = getAuth(app);
     setLogLevel('debug');
   } else {
-    throw new Error("Firebase config is empty.");
+    throw new Error("Firebase config is invalid or missing.");
   }
 } catch (error) {
   console.error("Firebase 초기화 오류:", error);
@@ -86,6 +83,15 @@ function App() {
     });
     return () => unsubscribe();
   }, []);
+
+  if (!auth || !db) {
+      return (
+          <div className="p-6 text-red-700 bg-red-100 rounded-xl shadow-lg max-w-lg mx-auto mt-12 text-center">
+              <strong>Firebase 초기화 실패</strong>
+              <p className="mt-2 text-sm">Firebase 설정에 문제가 있어 앱을 시작할 수 없습니다. 관리자에게 문의하세요.</p>
+          </div>
+      );
+  }
 
   if (!isAuthReady) {
     return (
