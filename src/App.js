@@ -19,7 +19,6 @@ try {
     auth = getAuth(app);
     setLogLevel('debug');
   } else {
-    // Vercel 환경 변수가 없을 때 이 오류가 발생할 수 있습니다.
     console.error("Firebase config is invalid or missing from environment variables.");
   }
 } catch (error) {
@@ -364,13 +363,13 @@ function EntryForm({
   return (
     <div className="bg-white p-8 sm:p-12 rounded-3xl shadow-2xl max-w-3xl mx-auto">
       <h1 className="text-4xl font-bold text-slate-800 mb-12 text-center">주차 정보 입력</h1>
-      
+
       {message.text && <div className={`p-4 rounded-xl mb-8 text-sm ${message.type === 'success' ? 'bg-green-50 text-green-700 border border-green-300' : 'bg-red-50 text-red-700 border border-red-300'}`}>{message.text}</div>}
-      
+
       <form onSubmit={handleSubmit} className="space-y-10" onClick={() => { setShowNameSuggestions(false); setShowAccountInfoSuggestions(false); }}>
         <FormItem icon={Building} label="주차 장소"><select value={parkingLocation} onChange={(e) => setParkingLocation(e.target.value)} className={formInputOneUI}>{PARKING_LOCATIONS.map(loc => <option key={loc} value={loc}>{loc}</option>)}</select></FormItem>
         <FormItem icon={CalendarDays} label="주차 날짜"><input type="date" value={parkingDate} onChange={(e) => setParkingDate(e.target.value)} className={formInputOneUI} required /></FormItem>
-        
+
         <div className="relative">
           <FormItem icon={UserCircle} label="이름">
             <input type="text" value={name} onChange={handleNameChange} onClick={(e) => e.stopPropagation()} placeholder="이름을 입력하세요" className={formInputOneUI} required />
@@ -387,7 +386,7 @@ function EntryForm({
         </div>
 
         <FormItem icon={Users} label="직분"><select value={position} onChange={(e) => setPosition(e.target.value)} className={formInputOneUI}>{POSITIONS.map(pos => <option key={pos} value={pos}>{pos}</option>)}</select></FormItem>
-        
+
         <FormItem icon={Banknote} label="계좌 정보">
           <div className="space-y-6">
             <div><label htmlFor="bankName" className="block text-sm font-medium text-slate-600 mb-2">은행명</label><select id="bankName" value={selectedBank} onChange={(e) => { setSelectedBank(e.target.value); if (e.target.value !== '기타') setCustomBankName(''); }} className={formInputOneUI}>{BANK_NAMES_WITH_OTHER.map(bank => <option key={bank} value={bank}>{bank}</option>)}</select></div>
@@ -755,7 +754,7 @@ function QueryPage({ db, userId, isAuthReady, setDbError }) {
 
       setPeriodTopLocation(getTopParkingLocationsHelper(updatedResults, 1));
       if (searchName.trim()) {
-        const userSpecificRecords = fetchedRecords.filter(r => r.name === searchName.trim());
+        const userSpecificRecords = updatedResults.filter(r => r.name === searchName.trim());
         setIndividualTopLocation(getTopParkingLocationsHelper(userSpecificRecords, 1));
       } else {
         setIndividualTopLocation('');
@@ -827,7 +826,7 @@ function QueryPage({ db, userId, isAuthReady, setDbError }) {
             <p className="text-4xl font-bold text-blue-600">{formatCurrency(totalFee)}</p>
         </div>
       )}
-      
+
       {Object.keys(nameAccountTotals).length > 0 && (
         <div className="bg-white p-8 sm:p-10 rounded-2xl shadow-xl mb-10">
           <h2 className="text-2xl font-semibold text-slate-800 mb-8 flex items-center"><ListChecks size={30} className="mr-4 text-blue-600" />이름 및 계좌별 합계</h2>
@@ -867,7 +866,7 @@ function QueryPage({ db, userId, isAuthReady, setDbError }) {
         </div>
       )}
       {results.length === 0 && !isLoading && !message && <div className="bg-white p-12 rounded-2xl shadow-xl text-center"><p className="text-slate-500 text-xl">조회할 조건을 입력하고 검색 버튼을 눌러주세요.</p></div>}
-      
+
       {showDeleteModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
           <div className="bg-white p-8 sm:p-10 rounded-2xl shadow-2xl max-w-lg w-full transform transition-all duration-300 ease-out scale-100 opacity-100">
@@ -901,7 +900,7 @@ function QueryPage({ db, userId, isAuthReady, setDbError }) {
                 <X size={24} />
               </button>
             </div>
-            
+
             {isAiLoading && (
               <div className="flex flex-col items-center justify-center py-10">
                 <Loader2 className="animate-spin h-12 w-12 text-purple-600 mb-6" />
@@ -921,7 +920,7 @@ function QueryPage({ db, userId, isAuthReady, setDbError }) {
                 {aiSummary}
               </div>
             )}
-            
+
             <div className="flex flex-col sm:flex-row justify-end space-y-3 sm:space-y-0 sm:space-x-4 pt-6 border-t border-slate-200">
               {!isAiLoading && aiSummary && (
                  <button
