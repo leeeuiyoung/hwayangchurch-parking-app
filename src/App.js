@@ -4,7 +4,7 @@ import { getFirestore, collection, addDoc, getDocs, query, where, serverTimestam
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { Save, Search, CalendarDays, Users, DollarSign, Clock, Building, Banknote, UserCircle, FileText, Trash2, AlertTriangle, ListChecks, Download, X, Sparkles, Copy, Loader2, PlayCircle, StopCircle, Info, History } from 'lucide-react';
 
-// Netlify/Vercel/Canvas 환경 호환 설정
+// 배포 및 미리보기 환경 호환 설정
 let firebaseConfig = {};
 let appId = 'default-church-parking-app';
 let geminiApiKey = '';
@@ -465,7 +465,7 @@ function QueryPage({ db, userId, isAuthReady, setDbError }) {
 
   const [recordingSession, setRecordingSession] = useState(null);
   const [completedSessions, setCompletedSessions] = useState([]);
-  
+
   const handleSearch = useCallback(async (searchParams = {}) => {
     if (!isAuthReady || !userId || !db) {
       setMessage('데이터베이스 연결이 준비되지 않았습니다.');
