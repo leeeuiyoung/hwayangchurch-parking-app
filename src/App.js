@@ -9,20 +9,21 @@ let firebaseConfig = {};
 let appId = 'default-church-parking-app';
 let geminiApiKey = '';
 
-if (typeof process !== 'undefined' && process.env.REACT_APP_API_KEY) {
-    // Vercel/Netlify/Local dev build environment
+// Vercel/Netlify/Local dev build environment
+if (typeof process !== 'undefined' && process.env.REACT_APP_FIREBASE_API_KEY) {
     firebaseConfig = {
-        apiKey: process.env.REACT_APP_API_KEY,
-        authDomain: process.env.REACT_APP_AUTH_DOMAIN,
-        projectId: process.env.REACT_APP_PROJECT_ID,
-        storageBucket: process.env.REACT_APP_STORAGE_BUCKET,
-        messagingSenderId: process.env.REACT_APP_MESSAGING_SENDER_ID,
-        appId: process.env.REACT_APP_APP_ID_FIREBASE
+        apiKey: process.env.REACT_APP_FIREBASE_API_KEY,
+        authDomain: "hwayangchurch-parking-app.firebaseapp.com",
+        projectId: "hwayangchurch-parking-app",
+        storageBucket: "hwayangchurch-parking-app.appspot.com",
+        messagingSenderId: "104913357347",
+        appId: "1:104913357347:web:e3054f97d1d63b97cf7f96"
     };
     appId = process.env.REACT_APP_ID || 'default-church-parking-app';
     geminiApiKey = process.env.REACT_APP_GEMINI_API_KEY || "";
-} else if (typeof __firebase_config !== 'undefined') {
-    // Canvas 환경 변수가 있는지 먼저 확인
+} 
+// Canvas 환경 변수가 있는지 먼저 확인
+else if (typeof __firebase_config !== 'undefined') {
     // eslint-disable-next-line no-undef
     firebaseConfig = JSON.parse(__firebase_config);
     // eslint-disable-next-line no-undef
@@ -34,13 +35,13 @@ let db;
 let auth;
 
 try {
-  if (Object.keys(firebaseConfig).length > 0 && firebaseConfig.projectId) {
+  if (firebaseConfig.apiKey) {
     app = initializeApp(firebaseConfig);
     db = getFirestore(app);
     auth = getAuth(app);
     setLogLevel('debug');
   } else {
-    console.error("Firebase config is invalid or missing from environment variables.");
+    throw new Error("Firebase API Key is missing from environment variables.");
   }
 } catch (error) {
   console.error("Firebase 초기화 오류:", error);
@@ -465,7 +466,7 @@ function QueryPage({ db, userId, isAuthReady, setDbError }) {
 
   const [recordingSession, setRecordingSession] = useState(null);
   const [completedSessions, setCompletedSessions] = useState([]);
-  
+
   const handleSearch = useCallback(async (searchParams = {}) => {
     if (!isAuthReady || !userId || !db) {
       setMessage('데이터베이스 연결이 준비되지 않았습니다.');
