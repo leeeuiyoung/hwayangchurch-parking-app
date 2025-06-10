@@ -1,26 +1,24 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, addDoc, getDocs, query, where, serverTimestamp, setLogLevel, deleteDoc, doc } from 'firebase/firestore';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { Save, Search, CalendarDays, Users, DollarSign, Clock, Building, Banknote, UserCircle, FileText, Trash2, AlertTriangle, ListChecks, Download, X, Sparkles, Copy, Loader2, PlayCircle, StopCircle, Info } from 'lucide-react';
+import { Save, Search, CalendarDays, Users, DollarSign, Clock, Building, Banknote, UserCircle, FileText, Trash2, AlertTriangle, ListChecks, Download, X, Sparkles, Copy, Loader2, PlayCircle, StopCircle, Info, History } from 'lucide-react';
 
-// Vercel 및 Canvas 환경 호환을 위해 설정을 분기합니다.
-const firebaseConfig =
-  typeof process !== "undefined" && process.env.REACT_APP_FIREBASE_CONFIG
-    ? JSON.parse(process.env.REACT_APP_FIREBASE_CONFIG)
-    : typeof __firebase_config !== "undefined"
+// 배포 및 미리보기 환경 호환 설정
+let firebaseConfig = {};
+let appId = 'default-church-parking-app';
+let geminiApiKey = '';
+
+if (typeof process !== 'undefined' && process.env.REACT_APP_FIREBASE_CONFIG) {
+    firebaseConfig = JSON.parse(process.env.REACT_APP_FIREBASE_CONFIG);
+    appId = process.env.REACT_APP_ID || 'default-church-parking-app';
+    geminiApiKey = process.env.REACT_APP_GEMINI_API_KEY || "";
+} else if (typeof __firebase_config !== 'undefined') {
     // eslint-disable-next-line no-undef
-    ? JSON.parse(__firebase_config)
-    : {}; // 어느 쪽도 없으면 빈 객체로 fallback
-
-const appId =
-  (typeof process !== "undefined" && process.env.REACT_APP_ID) ||
-  (typeof __app_id !== "undefined"
+    firebaseConfig = JSON.parse(__firebase_config);
     // eslint-disable-next-line no-undef
-    ? __app_id
-    : "default-church-parking-app");
-
-const geminiApiKey = (typeof process !== "undefined" && process.env.REACT_APP_GEMINI_API_KEY) || "";
+    appId = __app_id || 'default-church-parking-app';
+}
 
 let app;
 let db;
@@ -33,7 +31,6 @@ try {
     auth = getAuth(app);
     setLogLevel('debug');
   } else {
-    // Vercel 환경 변수가 없을 때 이 오류가 발생할 수 있습니다.
     console.error("Firebase config is invalid or missing from environment variables.");
   }
 } catch (error) {
@@ -62,42 +59,7 @@ function App() {
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [authError, setAuthError] = useState(null);
   const [dbError, setDbError] = useState(null);
-  const [lastEnteredParkingDate, setLastEnteredParkingDate] = useState(new Date().toISOString().split('T')[0]);
-  const [lastEnteredParkingLocation, setLastEnteredParkingLocation] = useState(PARKING_LOCATIONS[0]);
   
-  // 세션 관련 상태를 최상위 컴포넌트로 이동
-  const [recordingSession, setRecordingSession] = useState(null);
-  const [sessionSearchDates, setSessionSearchDates] = useState({ start: '', end: '' });
-
-  // 세션 시작/중단 로직을 최상위 컴포넌트로 이동
-  const handleStartRecording = () => {
-    const startTime = new Date().toISOString();
-    const session = { startTime };
-    localStorage.setItem('parkingRecordingSession', JSON.stringify(session));
-    setRecordingSession(session);
-  };
-
-  const handleStopRecording = () => {
-    if (recordingSession) {
-      const endTime = new Date().toISOString();
-      setSessionSearchDates({
-        start: recordingSession.startTime.split('T')[0],
-        end: endTime.split('T')[0]
-      });
-      localStorage.removeItem('parkingRecordingSession');
-      setRecordingSession(null);
-      setCurrentPage('query'); // 조회 페이지로 자동 전환
-    }
-  };
-
-  // 앱 시작 시 로컬 스토리지에서 세션 정보 로드
-  useEffect(() => {
-    const savedSession = localStorage.getItem('parkingRecordingSession');
-    if (savedSession) {
-      setRecordingSession(JSON.parse(savedSession));
-    }
-  }, []);
-
   useEffect(() => {
     if (!auth) {
       setAuthError("Firebase Auth 서비스 초기화 실패");
@@ -127,7 +89,7 @@ function App() {
       return (
           <div className="p-6 text-red-700 bg-red-100 rounded-xl shadow-lg max-w-lg mx-auto mt-12 text-center">
               <strong>Firebase 초기화 실패</strong>
-              <p className="mt-2 text-sm">Firebase 설정에 문제가 있어 앱을 시작할 수 없습니다. Vercel 또는 Canvas 환경 변수를 확인해주세요.</p>
+              <p className="mt-2 text-sm">Firebase 설정에 문제가 있어 앱을 시작할 수 없습니다. 배포 서비스의 환경 변수를 확인해주세요.</p>
           </div>
       );
   }
@@ -181,27 +143,8 @@ function App() {
         </div>
       </header>
       <main className="container mx-auto p-4 sm:p-6 lg:p-8 flex-grow w-full">
-        {currentPage === 'entry' &&
-            <EntryForm
-                db={db}
-                userId={userId}
-                isAuthReady={isAuthReady}
-                setDbError={setDbError}
-                lastEnteredParkingDateFromApp={lastEnteredParkingDate}
-                setLastEnteredParkingDateInApp={setLastEnteredParkingDate}
-                lastEnteredParkingLocationFromApp={lastEnteredParkingLocation}
-                setLastEnteredParkingLocationInApp={setLastEnteredParkingLocation}
-                recordingSession={recordingSession}
-                handleStartRecording={handleStartRecording}
-                handleStopRecording={handleStopRecording}
-            />}
-        {currentPage === 'query' && <QueryPage 
-                db={db} 
-                userId={userId} 
-                isAuthReady={isAuthReady} 
-                setDbError={setDbError} 
-                sessionSearchDates={sessionSearchDates}
-            />}
+        {currentPage === 'entry' && <EntryForm db={db} userId={userId} isAuthReady={isAuthReady} setDbError={setDbError}/>}
+        {currentPage === 'query' && <QueryPage db={db} userId={userId} isAuthReady={isAuthReady} setDbError={setDbError}/>}
       </main>
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-5 flex justify-center sm:justify-end border-t border-slate-200 bg-white shadow-top-lg">
         {navigationButtons}
@@ -214,21 +157,9 @@ function App() {
   );
 }
 
-function EntryForm({
-    db,
-    userId,
-    isAuthReady,
-    setDbError,
-    lastEnteredParkingDateFromApp,
-    setLastEnteredParkingDateInApp,
-    lastEnteredParkingLocationFromApp,
-    setLastEnteredParkingLocationInApp,
-    recordingSession,
-    handleStartRecording,
-    handleStopRecording,
-}) {
-  const [parkingLocation, setParkingLocation] = useState(lastEnteredParkingLocationFromApp || PARKING_LOCATIONS[0]);
-  const [parkingDate, setParkingDate] = useState(lastEnteredParkingDateFromApp || new Date().toISOString().split('T')[0]);
+function EntryForm({ db, userId, isAuthReady, setDbError }) {
+  const [parkingLocation, setParkingLocation] = useState(PARKING_LOCATIONS[0]);
+  const [parkingDate, setParkingDate] = useState(new Date().toISOString().split('T')[0]);
   const [name, setName] = useState('');
   const [position, setPosition] = useState(POSITIONS[0]);
   const [selectedBank, setSelectedBank] = useState(BANK_NAMES_WITH_OTHER[0]);
@@ -271,7 +202,7 @@ function EntryForm({
       };
       fetchParkingRecords();
     }
-  }, [db, userId, isAuthReady, setDbError, appId]);
+  }, [db, userId, isAuthReady, setDbError]);
 
 
   const handleNameChange = (e) => {
@@ -389,9 +320,6 @@ function EntryForm({
       await addDoc(collection(db, `/artifacts/${appId}/public/data/parkingRecords`), newRecord);
       setMessage({ type: 'success', text: '데이터가 성공적으로 저장되었습니다.' });
 
-      setLastEnteredParkingDateInApp(parkingDate);
-      setLastEnteredParkingLocationInApp(parkingLocation);
-
       setName('');
       setPosition(POSITIONS[0]);
       setSelectedBank(BANK_NAMES_WITH_OTHER[0]);
@@ -423,26 +351,6 @@ function EntryForm({
   return (
     <div className="bg-white p-8 sm:p-12 rounded-3xl shadow-2xl max-w-3xl mx-auto">
       <h1 className="text-4xl font-bold text-slate-800 mb-12 text-center">주차 정보 입력</h1>
-
-      <div className="bg-sky-50 border-2 border-sky-200 p-6 rounded-2xl mb-10">
-          <h2 className="text-xl font-semibold text-sky-800 mb-4 flex items-center"><Clock className="w-6 h-6 mr-3"/>기록 세션 관리</h2>
-          <div className="flex flex-col sm:flex-row gap-4">
-            <button onClick={handleStartRecording} disabled={!!recordingSession} className="flex-1 bg-green-500 hover:bg-green-600 text-white font-semibold py-3 px-5 rounded-xl shadow-md transition-all duration-150 ease-in-out flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed">
-              <PlayCircle className="w-5 h-5 mr-2.5"/>기록 시작
-            </button>
-            <button onClick={handleStopRecording} disabled={!recordingSession} className="flex-1 bg-red-500 hover:bg-red-600 text-white font-semibold py-3 px-5 rounded-xl shadow-md transition-all duration-150 ease-in-out flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed">
-              <StopCircle className="w-5 h-5 mr-2.5"/>기록 중단 및 조회
-            </button>
-          </div>
-          {recordingSession && (
-            <div className="mt-4 p-4 bg-green-100 text-green-800 rounded-lg text-sm flex items-center">
-                <Info className="w-5 h-5 mr-3 shrink-0"/>
-                <span>
-                    기록이 진행 중입니다. 시작 시간: <strong>{new Date(recordingSession.startTime).toLocaleString()}</strong>
-                </span>
-            </div>
-          )}
-        </div>
       
       {message.text && <div className={`p-4 rounded-xl mb-8 text-sm ${message.type === 'success' ? 'bg-green-50 text-green-700 border border-green-300' : 'bg-red-50 text-red-700 border border-red-300'}`}>{message.text}</div>}
       
@@ -523,10 +431,10 @@ const FormItem = ({ icon: IconComponent, label, children }) => (
 );
 
 
-function QueryPage({ db, userId, isAuthReady, setDbError, sessionSearchDates }) {
+function QueryPage({ db, userId, isAuthReady, setDbError }) {
   const [searchName, setSearchName] = useState('');
-  const [searchStartDate, setSearchStartDate] = useState(sessionSearchDates.start || '');
-  const [searchEndDate, setSearchEndDate] = useState(sessionSearchDates.end || '');
+  const [searchStartDate, setSearchStartDate] = useState('');
+  const [searchEndDate, setSearchEndDate] = useState('');
   const [searchParkingLocation, setSearchParkingLocation] = useState(ALL_LOCATIONS_VALUE);
   const [results, setResults] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -546,15 +454,141 @@ function QueryPage({ db, userId, isAuthReady, setDbError, sessionSearchDates }) 
   const [periodTopLocation, setPeriodTopLocation] = useState('');
   const [individualTopLocation, setIndividualTopLocation] = useState('');
 
-  useEffect(() => {
-    // 세션 기록 중단 후 넘어왔을 때 자동으로 검색 실행
-    if(sessionSearchDates.start && sessionSearchDates.end) {
-        handleSearch();
+  const [recordingSession, setRecordingSession] = useState(null);
+  const [completedSessions, setCompletedSessions] = useState([]);
+  
+  const handleSearch = useCallback(async (searchParams = {}) => {
+    if (!isAuthReady || !userId || !db) {
+      setMessage('데이터베이스 연결이 준비되지 않았습니다.');
+      return;
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionSearchDates]);
+    setIsLoading(true);
+    setMessage('');
+    setDeleteMessage({ type: '', text: '' });
+  
+    const { 
+      name = searchName, 
+      startDate = searchStartDate, 
+      endDate = searchEndDate, 
+      location = searchParkingLocation 
+    } = searchParams;
+  
+    try {
+      const parkingRecordsRef = collection(db, `/artifacts/${appId}/public/data/parkingRecords`);
+      let q = query(parkingRecordsRef);
+  
+      if (startDate) {
+        q = query(q, where("createdAt", ">=", new Date(startDate)));
+      }
+      if (endDate) {
+        let endOfDay = new Date(endDate);
+        // If the date is just YYYY-MM-DD, set time to the end of that day.
+        if(endDate.length === 10) {
+            endOfDay.setHours(23, 59, 59, 999);
+        }
+        q = query(q, where("createdAt", "<=", endOfDay));
+      }
+      if (location && location !== ALL_LOCATIONS_VALUE) {
+        q = query(q, where("parkingLocation", "==", location));
+      }
+      if (name.trim()) {
+        q = query(q, where("name", "==", name.trim()));
+      }
+  
+      const querySnapshot = await getDocs(q);
+      const fetchedRecords = [];
+      querySnapshot.forEach((doc) => fetchedRecords.push({ id: doc.id, ...doc.data() }));
+  
+      const sortedDetailedResults = [...fetchedRecords].sort((a, b) => {
+        const dateA = a.createdAt?.toDate() || new Date(a.parkingDate);
+        const dateB = b.createdAt?.toDate() || new Date(b.parkingDate);
+        const nameCompare = a.name.localeCompare(b.name, 'ko-KR');
+        if (nameCompare !== 0) return nameCompare;
+        return dateB - dateA;
+      });
+      setResults(sortedDetailedResults);
+  
+      const currentNameAccountTotals = fetchedRecords.reduce((acc, record) => {
+        const key = `${record.name} | ${record.accountInfo}`;
+        if (!acc[key]) {
+          acc[key] = { name: record.name, accountInfo: record.accountInfo, totalFee: 0 };
+        }
+        acc[key].totalFee += (record.calculatedFee || 0);
+        return acc;
+      }, {});
+      setNameAccountTotals(currentNameAccountTotals);
+  
+      let currentTotalFee = 0;
+      fetchedRecords.forEach(record => currentTotalFee += (record.calculatedFee || 0));
+      setTotalFee(currentTotalFee);
+  
+      setPeriodTopLocation(getTopParkingLocationsHelper(fetchedRecords));
+      if (name.trim()) {
+        const userSpecificRecords = fetchedRecords.filter(r => r.name === name.trim());
+        setIndividualTopLocation(getTopParkingLocationsHelper(userSpecificRecords));
+      } else {
+        setIndividualTopLocation('');
+      }
+  
+      if (fetchedRecords.length === 0) setMessage('검색 결과가 없습니다.');
+    } catch (error) {
+      console.error("데이터 조회 오류: ", error);
+      setMessage(`조회 오류: ${error.message}`);
+      setDbError(`조회 오류: ${error.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [isAuthReady, userId, db, searchName, searchStartDate, searchEndDate, searchParkingLocation, setDbError]);
 
+  useEffect(() => {
+    const savedSession = localStorage.getItem('parkingRecordingSession');
+    if (savedSession) {
+      setRecordingSession(JSON.parse(savedSession));
+    }
+    const savedCompletedSessions = localStorage.getItem('completedParkingSessions');
+    if (savedCompletedSessions) {
+      setCompletedSessions(JSON.parse(savedCompletedSessions));
+    }
+  }, []);
 
+  const handleStartRecording = () => {
+    const startTime = new Date().toISOString();
+    const session = { id: Date.now(), startTime };
+    localStorage.setItem('parkingRecordingSession', JSON.stringify(session));
+    setRecordingSession(session);
+    setMessage(`기록이 시작되었습니다: ${new Date(startTime).toLocaleString()}`);
+  };
+
+  const handleStopRecording = () => {
+    if (recordingSession) {
+      const endTime = new Date().toISOString();
+      const newCompletedSession = { ...recordingSession, endTime };
+      
+      const updatedCompletedSessions = [newCompletedSession, ...completedSessions];
+      setCompletedSessions(updatedCompletedSessions);
+      localStorage.setItem('completedParkingSessions', JSON.stringify(updatedCompletedSessions));
+      
+      localStorage.removeItem('parkingRecordingSession');
+      setRecordingSession(null);
+      
+      const start = newCompletedSession.startTime;
+      const end = newCompletedSession.endTime;
+      setSearchStartDate(start.split('T')[0]);
+      setSearchEndDate(end.split('T')[0]);
+      setMessage(`기록이 중단되었습니다. 기간이 자동으로 설정되었습니다.`);
+      
+      handleSearch({startDate: start, endDate: end});
+    }
+  };
+
+  const handleSessionClick = (session) => {
+    const start = session.startTime;
+    const end = session.endTime;
+    setSearchStartDate(start.split('T')[0]);
+    setSearchEndDate(end.split('T')[0]);
+    handleSearch({ startDate: start, endDate: end });
+  };
+  
   const formatCurrency = (amount) => new Intl.NumberFormat('ko-KR').format(amount) + '원';
 
   const getTopParkingLocationsHelper = (records, count = 1) => {
@@ -739,81 +773,6 @@ function QueryPage({ db, userId, isAuthReady, setDbError, sessionSearchDates }) 
     }
   };
 
-  const handleSearch = async (keepCurrentResults = false) => {
-    if (!isAuthReady || !userId || !db) {
-      setMessage('데이터베이스 연결이 준비되지 않았습니다.'); return;
-    }
-    setIsLoading(true);
-    if (!keepCurrentResults) {
-        setResults([]);
-        setTotalFee(0);
-        setNameAccountTotals({});
-        setPeriodTopLocation('');
-        setIndividualTopLocation('');
-    }
-    setMessage(''); setDeleteMessage({ type: '', text: '' });
-
-    try {
-      const parkingRecordsRef = collection(db, `/artifacts/${appId}/public/data/parkingRecords`);
-      let q = query(parkingRecordsRef);
-
-      if (searchStartDate) {
-        q = query(q, where("parkingDate", ">=", searchStartDate));
-      }
-      if (searchEndDate) {
-        q = query(q, where("parkingDate", "<=", searchEndDate));
-      }
-      if (searchParkingLocation && searchParkingLocation !== ALL_LOCATIONS_VALUE) {
-        q = query(q, where("parkingLocation", "==", searchParkingLocation));
-      }
-      if (searchName.trim()) {
-        q = query(q, where("name", "==", searchName.trim()));
-      }
-
-      const querySnapshot = await getDocs(q);
-      const fetchedRecords = [];
-      querySnapshot.forEach((doc) => fetchedRecords.push({ id: doc.id, ...doc.data() }));
-
-      const sortedDetailedResults = [...fetchedRecords].sort((a, b) => {
-        const nameCompare = a.name.localeCompare(b.name, 'ko-KR');
-        if (nameCompare !== 0) return nameCompare;
-        return new Date(b.parkingDate) - new Date(a.parkingDate);
-      });
-      setResults(sortedDetailedResults);
-
-      const currentNameAccountTotals = fetchedRecords.reduce((acc, record) => {
-        const key = `${record.name} | ${record.accountInfo}`;
-        if (!acc[key]) {
-          acc[key] = { name: record.name, accountInfo: record.accountInfo, totalFee: 0 };
-        }
-        acc[key].totalFee += (record.calculatedFee || 0);
-        return acc;
-      }, {});
-      setNameAccountTotals(currentNameAccountTotals);
-
-      let currentTotalFee = 0;
-      fetchedRecords.forEach(record => currentTotalFee += (record.calculatedFee || 0));
-      setTotalFee(currentTotalFee);
-
-      setPeriodTopLocation(getTopParkingLocationsHelper(fetchedRecords, 1));
-      if (searchName.trim()) {
-        const userSpecificRecords = fetchedRecords.filter(r => r.name === searchName.trim());
-        setIndividualTopLocation(getTopParkingLocationsHelper(userSpecificRecords, 1));
-      } else {
-        setIndividualTopLocation('');
-      }
-
-
-      if (fetchedRecords.length === 0 && !keepCurrentResults) setMessage('검색 결과가 없습니다.');
-    } catch (error) {
-      console.error("데이터 조회 오류: ", error);
-      setMessage(`조회 오류: ${error.message}`);
-      setDbError(`조회 오류: ${error.message}`);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   const handleDeleteAttempt = (recordId) => {
     setItemToDelete(recordId); setShowDeleteModal(true); setDeleteMessage({ type: '', text: '' });
   };
@@ -828,31 +787,10 @@ function QueryPage({ db, userId, isAuthReady, setDbError, sessionSearchDates }) 
       await deleteDoc(doc(db, `/artifacts/${appId}/public/data/parkingRecords`, itemToDelete));
       setDeleteMessage({ type: 'success', text: '항목이 성공적으로 삭제되었습니다.'});
 
-      const updatedResults = results.filter(r => r.id !== itemToDelete);
-      setResults(updatedResults);
+      // 삭제 후 목록 다시 로드
+      await handleSearch({startDate: searchStartDate, endDate: searchEndDate, name: searchName, location: searchParkingLocation});
+      setShowDeleteModal(false);
 
-      let currentTotalFee = 0;
-      const updatedNameAccountTotals = updatedResults.reduce((acc, record) => {
-        const key = `${record.name} | ${record.accountInfo}`;
-        if (!acc[key]) {
-          acc[key] = { name: record.name, accountInfo: record.accountInfo, totalFee: 0 };
-        }
-        acc[key].totalFee += (record.calculatedFee || 0);
-        currentTotalFee += (record.calculatedFee || 0);
-        return acc;
-      }, {});
-      setTotalFee(currentTotalFee);
-      setNameAccountTotals(updatedNameAccountTotals);
-
-      setPeriodTopLocation(getTopParkingLocationsHelper(updatedResults, 1));
-      if (searchName.trim()) {
-        const userSpecificRecords = updatedResults.filter(r => r.name === searchName.trim());
-        setIndividualTopLocation(getTopParkingLocationsHelper(userSpecificRecords, 1));
-      } else {
-        setIndividualTopLocation('');
-      }
-
-      setItemToDelete(null);
     } catch (error) {
       console.error("데이터 삭제 오류: ", error);
       setDeleteMessage({ type: 'error', text: `삭제 오류: ${error.message}` });
@@ -865,7 +803,46 @@ function QueryPage({ db, userId, isAuthReady, setDbError, sessionSearchDates }) 
   return (
     <div className="space-y-12">
       <div className="bg-white p-8 sm:p-12 rounded-3xl shadow-2xl">
-        <h1 className="text-4xl font-bold text-slate-800 mb-12 text-center">주차 정보 조회</h1>
+        <h1 className="text-4xl font-bold text-slate-800 mb-6 text-center">주차 정보 조회</h1>
+        
+        <div className="bg-sky-50 border-2 border-sky-200 p-6 rounded-2xl mb-10">
+          <h2 className="text-xl font-semibold text-sky-800 mb-4 flex items-center"><Clock className="w-6 h-6 mr-3"/>기록 세션 관리</h2>
+          <div className="flex flex-col sm:flex-row gap-4">
+            <button onClick={handleStartRecording} disabled={!!recordingSession} className="flex-1 bg-green-500 hover:bg-green-600 text-white font-semibold py-3 px-5 rounded-xl shadow-md transition-all duration-150 ease-in-out flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed">
+              <PlayCircle className="w-5 h-5 mr-2.5"/>기록 시작
+            </button>
+            <button onClick={handleStopRecording} disabled={!recordingSession} className="flex-1 bg-red-500 hover:bg-red-600 text-white font-semibold py-3 px-5 rounded-xl shadow-md transition-all duration-150 ease-in-out flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed">
+              <StopCircle className="w-5 h-5 mr-2.5"/>기록 중단
+            </button>
+          </div>
+          {recordingSession && (
+            <div className="mt-4 p-4 bg-green-100 text-green-800 rounded-lg text-sm flex items-center">
+                <Info className="w-5 h-5 mr-3 shrink-0"/>
+                <span>
+                    기록이 진행 중입니다. 시작 시간: <strong>{new Date(recordingSession.startTime).toLocaleString()}</strong>
+                </span>
+            </div>
+          )}
+        </div>
+        
+        {completedSessions.length > 0 && (
+          <div className="bg-gray-50 border-2 border-gray-200 p-6 rounded-2xl mb-10">
+            <h2 className="text-xl font-semibold text-gray-800 mb-4 flex items-center"><History className="w-6 h-6 mr-3"/>완료된 기록</h2>
+            <ul className="space-y-2">
+              {completedSessions.map(session => (
+                <li key={session.id}>
+                  <button 
+                    onClick={() => handleSessionClick(session)} 
+                    className="w-full text-left p-3 bg-white hover:bg-gray-100 rounded-lg border border-gray-300 transition-all duration-150"
+                  >
+                    <p className="font-semibold text-gray-700">{new Date(session.startTime).toLocaleString()} ~ {new Date(session.endTime).toLocaleString()}</p>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-x-8 gap-y-10 mb-12 items-end">
           <div>
             <label htmlFor="searchName" className="block text-lg font-semibold text-slate-700 mb-2.5">이름 검색</label>
@@ -888,7 +865,7 @@ function QueryPage({ db, userId, isAuthReady, setDbError, sessionSearchDates }) 
           </div>
         </div>
         <div className="flex flex-col sm:flex-row gap-5">
-          <button id="search-button" onClick={() => handleSearch(false)} disabled={isLoading || !isAuthReady} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-4 px-6 rounded-xl shadow-lg transition-all duration-150 ease-in-out flex items-center justify-center disabled:opacity-70 focus:outline-none focus:ring-4 focus:ring-offset-2 focus:ring-blue-300 text-lg">
+          <button id="search-button" onClick={() => handleSearch()} disabled={isLoading || !isAuthReady} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-4 px-6 rounded-xl shadow-lg transition-all duration-150 ease-in-out flex items-center justify-center disabled:opacity-70 focus:outline-none focus:ring-4 focus:ring-offset-2 focus:ring-blue-300 text-lg">
               {isLoading && !showDeleteModal && !isAiLoading ? <Loader2 className="animate-spin -ml-1 mr-3 h-6 w-6 text-white" /> : <Search className="w-6 h-6 mr-3" />}
               {isLoading && !showDeleteModal && !isAiLoading ? '검색 중...' : '검색하기'}
           </button>
