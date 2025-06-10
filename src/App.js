@@ -19,7 +19,7 @@ const appId =
     // eslint-disable-next-line no-undef
     ? __app_id
     : "default-church-parking-app");
-    
+
 const geminiApiKey = (typeof process !== "undefined" && process.env.REACT_APP_GEMINI_API_KEY) || "";
 
 let app;
@@ -33,6 +33,7 @@ try {
     auth = getAuth(app);
     setLogLevel('debug');
   } else {
+    // Vercel 환경 변수가 없을 때 이 오류가 발생할 수 있습니다.
     console.error("Firebase config is invalid or missing from environment variables.");
   }
 } catch (error) {
@@ -865,7 +866,6 @@ function QueryPage({ db, userId, isAuthReady, setDbError, sessionSearchDates }) 
     <div className="space-y-12">
       <div className="bg-white p-8 sm:p-12 rounded-3xl shadow-2xl">
         <h1 className="text-4xl font-bold text-slate-800 mb-12 text-center">주차 정보 조회</h1>
-
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-x-8 gap-y-10 mb-12 items-end">
           <div>
             <label htmlFor="searchName" className="block text-lg font-semibold text-slate-700 mb-2.5">이름 검색</label>
@@ -1041,4 +1041,3 @@ const Th = ({ children, className = '' }) => <th scope="col" className={`px-6 py
 const Td = ({ children, className = '' }) => <td className={`px-6 py-5 whitespace-nowrap text-base text-slate-700 ${className}`}>{children}</td>;
 
 export default App;
-
