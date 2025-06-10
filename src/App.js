@@ -9,11 +9,20 @@ let firebaseConfig = {};
 let appId = 'default-church-parking-app';
 let geminiApiKey = '';
 
-if (typeof process !== 'undefined' && process.env.REACT_APP_FIREBASE_CONFIG) {
-    firebaseConfig = JSON.parse(process.env.REACT_APP_FIREBASE_CONFIG);
+if (typeof process !== 'undefined' && process.env.REACT_APP_API_KEY) {
+    // Vercel/Netlify/Local dev build environment
+    firebaseConfig = {
+        apiKey: process.env.REACT_APP_API_KEY,
+        authDomain: process.env.REACT_APP_AUTH_DOMAIN,
+        projectId: process.env.REACT_APP_PROJECT_ID,
+        storageBucket: process.env.REACT_APP_STORAGE_BUCKET,
+        messagingSenderId: process.env.REACT_APP_MESSAGING_SENDER_ID,
+        appId: process.env.REACT_APP_APP_ID_FIREBASE
+    };
     appId = process.env.REACT_APP_ID || 'default-church-parking-app';
     geminiApiKey = process.env.REACT_APP_GEMINI_API_KEY || "";
 } else if (typeof __firebase_config !== 'undefined') {
+    // Canvas 환경 변수가 있는지 먼저 확인
     // eslint-disable-next-line no-undef
     firebaseConfig = JSON.parse(__firebase_config);
     // eslint-disable-next-line no-undef
@@ -482,8 +491,9 @@ function QueryPage({ db, userId, isAuthReady, setDbError }) {
       }
       if (endDate) {
         let endOfDay = new Date(endDate);
-        // If the date is just YYYY-MM-DD, set time to the end of that day.
-        if(endDate.length === 10) {
+        if(endDate.length > 10) { 
+            endOfDay = new Date(endDate);
+        } else {
             endOfDay.setHours(23, 59, 59, 999);
         }
         q = query(q, where("createdAt", "<=", endOfDay));
@@ -534,7 +544,7 @@ function QueryPage({ db, userId, isAuthReady, setDbError }) {
     } catch (error) {
       console.error("데이터 조회 오류: ", error);
       setMessage(`조회 오류: ${error.message}`);
-      setDbError(`조회 오류: ${error.message}`);
+      setDbError(error.message);
     } finally {
       setIsLoading(false);
     }
