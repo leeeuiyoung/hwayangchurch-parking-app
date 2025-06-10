@@ -2,11 +2,25 @@ import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, addDoc, getDocs, query, where, serverTimestamp, setLogLevel, deleteDoc, doc } from 'firebase/firestore';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { Save, Search, CalendarDays, Users, DollarSign, Clock, Building, Banknote, UserCircle, FileText, Trash2, AlertTriangle, ListChecks, Download, X, Sparkles, Copy, Loader2 } from 'lucide-react';
+import { Save, Search, CalendarDays, Users, DollarSign, Clock, Building, Banknote, UserCircle, FileText, Trash2, AlertTriangle, ListChecks, Download, X, Sparkles, Copy, Loader2, PlayCircle, StopCircle, Info } from 'lucide-react';
 
-// Vercel 배포를 위해 환경 변수에서 Firebase 설정을 가져옵니다.
-const firebaseConfig = JSON.parse(process.env.REACT_APP_FIREBASE_CONFIG || '{}');
-const appId = process.env.REACT_APP_ID || 'default-church-parking-app';
+// Vercel 및 Canvas 환경 호환을 위해 설정을 분기합니다.
+const firebaseConfig =
+  typeof process !== "undefined" && process.env.REACT_APP_FIREBASE_CONFIG
+    ? JSON.parse(process.env.REACT_APP_FIREBASE_CONFIG)
+    : typeof __firebase_config !== "undefined"
+    // eslint-disable-next-line no-undef
+    ? JSON.parse(__firebase_config)
+    : {}; // 어느 쪽도 없으면 빈 객체로 fallback
+
+const appId =
+  (typeof process !== "undefined" && process.env.REACT_APP_ID) ||
+  (typeof __app_id !== "undefined"
+    // eslint-disable-next-line no-undef
+    ? __app_id
+    : "default-church-parking-app");
+    
+const geminiApiKey = (typeof process !== "undefined" && process.env.REACT_APP_GEMINI_API_KEY) || "";
 
 let app;
 let db;
@@ -49,6 +63,39 @@ function App() {
   const [dbError, setDbError] = useState(null);
   const [lastEnteredParkingDate, setLastEnteredParkingDate] = useState(new Date().toISOString().split('T')[0]);
   const [lastEnteredParkingLocation, setLastEnteredParkingLocation] = useState(PARKING_LOCATIONS[0]);
+  
+  // 세션 관련 상태를 최상위 컴포넌트로 이동
+  const [recordingSession, setRecordingSession] = useState(null);
+  const [sessionSearchDates, setSessionSearchDates] = useState({ start: '', end: '' });
+
+  // 세션 시작/중단 로직을 최상위 컴포넌트로 이동
+  const handleStartRecording = () => {
+    const startTime = new Date().toISOString();
+    const session = { startTime };
+    localStorage.setItem('parkingRecordingSession', JSON.stringify(session));
+    setRecordingSession(session);
+  };
+
+  const handleStopRecording = () => {
+    if (recordingSession) {
+      const endTime = new Date().toISOString();
+      setSessionSearchDates({
+        start: recordingSession.startTime.split('T')[0],
+        end: endTime.split('T')[0]
+      });
+      localStorage.removeItem('parkingRecordingSession');
+      setRecordingSession(null);
+      setCurrentPage('query'); // 조회 페이지로 자동 전환
+    }
+  };
+
+  // 앱 시작 시 로컬 스토리지에서 세션 정보 로드
+  useEffect(() => {
+    const savedSession = localStorage.getItem('parkingRecordingSession');
+    if (savedSession) {
+      setRecordingSession(JSON.parse(savedSession));
+    }
+  }, []);
 
   useEffect(() => {
     if (!auth) {
@@ -79,7 +126,7 @@ function App() {
       return (
           <div className="p-6 text-red-700 bg-red-100 rounded-xl shadow-lg max-w-lg mx-auto mt-12 text-center">
               <strong>Firebase 초기화 실패</strong>
-              <p className="mt-2 text-sm">Firebase 설정에 문제가 있어 앱을 시작할 수 없습니다. Vercel 환경 변수를 확인해주세요.</p>
+              <p className="mt-2 text-sm">Firebase 설정에 문제가 있어 앱을 시작할 수 없습니다. Vercel 또는 Canvas 환경 변수를 확인해주세요.</p>
           </div>
       );
   }
@@ -143,8 +190,17 @@ function App() {
                 setLastEnteredParkingDateInApp={setLastEnteredParkingDate}
                 lastEnteredParkingLocationFromApp={lastEnteredParkingLocation}
                 setLastEnteredParkingLocationInApp={setLastEnteredParkingLocation}
+                recordingSession={recordingSession}
+                handleStartRecording={handleStartRecording}
+                handleStopRecording={handleStopRecording}
             />}
-        {currentPage === 'query' && <QueryPage db={db} userId={userId} isAuthReady={isAuthReady} setDbError={setDbError} />}
+        {currentPage === 'query' && <QueryPage 
+                db={db} 
+                userId={userId} 
+                isAuthReady={isAuthReady} 
+                setDbError={setDbError} 
+                sessionSearchDates={sessionSearchDates}
+            />}
       </main>
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-5 flex justify-center sm:justify-end border-t border-slate-200 bg-white shadow-top-lg">
         {navigationButtons}
@@ -165,7 +221,10 @@ function EntryForm({
     lastEnteredParkingDateFromApp,
     setLastEnteredParkingDateInApp,
     lastEnteredParkingLocationFromApp,
-    setLastEnteredParkingLocationInApp
+    setLastEnteredParkingLocationInApp,
+    recordingSession,
+    handleStartRecording,
+    handleStopRecording,
 }) {
   const [parkingLocation, setParkingLocation] = useState(lastEnteredParkingLocationFromApp || PARKING_LOCATIONS[0]);
   const [parkingDate, setParkingDate] = useState(lastEnteredParkingDateFromApp || new Date().toISOString().split('T')[0]);
@@ -364,12 +423,32 @@ function EntryForm({
     <div className="bg-white p-8 sm:p-12 rounded-3xl shadow-2xl max-w-3xl mx-auto">
       <h1 className="text-4xl font-bold text-slate-800 mb-12 text-center">주차 정보 입력</h1>
 
+      <div className="bg-sky-50 border-2 border-sky-200 p-6 rounded-2xl mb-10">
+          <h2 className="text-xl font-semibold text-sky-800 mb-4 flex items-center"><Clock className="w-6 h-6 mr-3"/>기록 세션 관리</h2>
+          <div className="flex flex-col sm:flex-row gap-4">
+            <button onClick={handleStartRecording} disabled={!!recordingSession} className="flex-1 bg-green-500 hover:bg-green-600 text-white font-semibold py-3 px-5 rounded-xl shadow-md transition-all duration-150 ease-in-out flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed">
+              <PlayCircle className="w-5 h-5 mr-2.5"/>기록 시작
+            </button>
+            <button onClick={handleStopRecording} disabled={!recordingSession} className="flex-1 bg-red-500 hover:bg-red-600 text-white font-semibold py-3 px-5 rounded-xl shadow-md transition-all duration-150 ease-in-out flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed">
+              <StopCircle className="w-5 h-5 mr-2.5"/>기록 중단 및 조회
+            </button>
+          </div>
+          {recordingSession && (
+            <div className="mt-4 p-4 bg-green-100 text-green-800 rounded-lg text-sm flex items-center">
+                <Info className="w-5 h-5 mr-3 shrink-0"/>
+                <span>
+                    기록이 진행 중입니다. 시작 시간: <strong>{new Date(recordingSession.startTime).toLocaleString()}</strong>
+                </span>
+            </div>
+          )}
+        </div>
+      
       {message.text && <div className={`p-4 rounded-xl mb-8 text-sm ${message.type === 'success' ? 'bg-green-50 text-green-700 border border-green-300' : 'bg-red-50 text-red-700 border border-red-300'}`}>{message.text}</div>}
-
+      
       <form onSubmit={handleSubmit} className="space-y-10" onClick={() => { setShowNameSuggestions(false); setShowAccountInfoSuggestions(false); }}>
         <FormItem icon={Building} label="주차 장소"><select value={parkingLocation} onChange={(e) => setParkingLocation(e.target.value)} className={formInputOneUI}>{PARKING_LOCATIONS.map(loc => <option key={loc} value={loc}>{loc}</option>)}</select></FormItem>
         <FormItem icon={CalendarDays} label="주차 날짜"><input type="date" value={parkingDate} onChange={(e) => setParkingDate(e.target.value)} className={formInputOneUI} required /></FormItem>
-
+        
         <div className="relative">
           <FormItem icon={UserCircle} label="이름">
             <input type="text" value={name} onChange={handleNameChange} onClick={(e) => e.stopPropagation()} placeholder="이름을 입력하세요" className={formInputOneUI} required />
@@ -386,7 +465,7 @@ function EntryForm({
         </div>
 
         <FormItem icon={Users} label="직분"><select value={position} onChange={(e) => setPosition(e.target.value)} className={formInputOneUI}>{POSITIONS.map(pos => <option key={pos} value={pos}>{pos}</option>)}</select></FormItem>
-
+        
         <FormItem icon={Banknote} label="계좌 정보">
           <div className="space-y-6">
             <div><label htmlFor="bankName" className="block text-sm font-medium text-slate-600 mb-2">은행명</label><select id="bankName" value={selectedBank} onChange={(e) => { setSelectedBank(e.target.value); if (e.target.value !== '기타') setCustomBankName(''); }} className={formInputOneUI}>{BANK_NAMES_WITH_OTHER.map(bank => <option key={bank} value={bank}>{bank}</option>)}</select></div>
@@ -443,10 +522,10 @@ const FormItem = ({ icon: IconComponent, label, children }) => (
 );
 
 
-function QueryPage({ db, userId, isAuthReady, setDbError }) {
+function QueryPage({ db, userId, isAuthReady, setDbError, sessionSearchDates }) {
   const [searchName, setSearchName] = useState('');
-  const [searchStartDate, setSearchStartDate] = useState('');
-  const [searchEndDate, setSearchEndDate] = useState('');
+  const [searchStartDate, setSearchStartDate] = useState(sessionSearchDates.start || '');
+  const [searchEndDate, setSearchEndDate] = useState(sessionSearchDates.end || '');
   const [searchParkingLocation, setSearchParkingLocation] = useState(ALL_LOCATIONS_VALUE);
   const [results, setResults] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -465,6 +544,14 @@ function QueryPage({ db, userId, isAuthReady, setDbError }) {
 
   const [periodTopLocation, setPeriodTopLocation] = useState('');
   const [individualTopLocation, setIndividualTopLocation] = useState('');
+
+  useEffect(() => {
+    // 세션 기록 중단 후 넘어왔을 때 자동으로 검색 실행
+    if(sessionSearchDates.start && sessionSearchDates.end) {
+        handleSearch();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionSearchDates]);
 
 
   const formatCurrency = (amount) => new Intl.NumberFormat('ko-KR').format(amount) + '원';
@@ -493,6 +580,11 @@ function QueryPage({ db, userId, isAuthReady, setDbError }) {
   const handleAiAnalysis = async () => {
     if (results.length === 0) {
       setAiError("분석할 데이터가 없습니다. 먼저 데이터를 검색해주세요.");
+      setShowAiSummaryModal(true);
+      return;
+    }
+    if (!geminiApiKey) {
+      setAiError("AI 분석을 위한 API 키가 설정되지 않았습니다. 관리자에게 문의하세요.");
       setShowAiSummaryModal(true);
       return;
     }
@@ -543,8 +635,7 @@ function QueryPage({ db, userId, isAuthReady, setDbError }) {
       let chatHistory = [];
       chatHistory.push({ role: "user", parts: [{ text: prompt }] });
       const payload = { contents: chatHistory };
-      const apiKey = "";
-      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiApiKey}`;
 
       const response = await fetch(apiUrl, {
         method: 'POST',
@@ -679,7 +770,7 @@ function QueryPage({ db, userId, isAuthReady, setDbError }) {
       }
 
       const querySnapshot = await getDocs(q);
-      let fetchedRecords = [];
+      const fetchedRecords = [];
       querySnapshot.forEach((doc) => fetchedRecords.push({ id: doc.id, ...doc.data() }));
 
       const sortedDetailedResults = [...fetchedRecords].sort((a, b) => {
@@ -774,6 +865,7 @@ function QueryPage({ db, userId, isAuthReady, setDbError }) {
     <div className="space-y-12">
       <div className="bg-white p-8 sm:p-12 rounded-3xl shadow-2xl">
         <h1 className="text-4xl font-bold text-slate-800 mb-12 text-center">주차 정보 조회</h1>
+
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-x-8 gap-y-10 mb-12 items-end">
           <div>
             <label htmlFor="searchName" className="block text-lg font-semibold text-slate-700 mb-2.5">이름 검색</label>
@@ -796,7 +888,7 @@ function QueryPage({ db, userId, isAuthReady, setDbError }) {
           </div>
         </div>
         <div className="flex flex-col sm:flex-row gap-5">
-          <button onClick={() => handleSearch(false)} disabled={isLoading || !isAuthReady} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-4 px-6 rounded-xl shadow-lg transition-all duration-150 ease-in-out flex items-center justify-center disabled:opacity-70 focus:outline-none focus:ring-4 focus:ring-offset-2 focus:ring-blue-300 text-lg">
+          <button id="search-button" onClick={() => handleSearch(false)} disabled={isLoading || !isAuthReady} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-4 px-6 rounded-xl shadow-lg transition-all duration-150 ease-in-out flex items-center justify-center disabled:opacity-70 focus:outline-none focus:ring-4 focus:ring-offset-2 focus:ring-blue-300 text-lg">
               {isLoading && !showDeleteModal && !isAiLoading ? <Loader2 className="animate-spin -ml-1 mr-3 h-6 w-6 text-white" /> : <Search className="w-6 h-6 mr-3" />}
               {isLoading && !showDeleteModal && !isAiLoading ? '검색 중...' : '검색하기'}
           </button>
@@ -826,7 +918,7 @@ function QueryPage({ db, userId, isAuthReady, setDbError }) {
             <p className="text-4xl font-bold text-blue-600">{formatCurrency(totalFee)}</p>
         </div>
       )}
-
+      
       {Object.keys(nameAccountTotals).length > 0 && (
         <div className="bg-white p-8 sm:p-10 rounded-2xl shadow-xl mb-10">
           <h2 className="text-2xl font-semibold text-slate-800 mb-8 flex items-center"><ListChecks size={30} className="mr-4 text-blue-600" />이름 및 계좌별 합계</h2>
@@ -866,7 +958,7 @@ function QueryPage({ db, userId, isAuthReady, setDbError }) {
         </div>
       )}
       {results.length === 0 && !isLoading && !message && <div className="bg-white p-12 rounded-2xl shadow-xl text-center"><p className="text-slate-500 text-xl">조회할 조건을 입력하고 검색 버튼을 눌러주세요.</p></div>}
-
+      
       {showDeleteModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
           <div className="bg-white p-8 sm:p-10 rounded-2xl shadow-2xl max-w-lg w-full transform transition-all duration-300 ease-out scale-100 opacity-100">
@@ -900,7 +992,7 @@ function QueryPage({ db, userId, isAuthReady, setDbError }) {
                 <X size={24} />
               </button>
             </div>
-
+            
             {isAiLoading && (
               <div className="flex flex-col items-center justify-center py-10">
                 <Loader2 className="animate-spin h-12 w-12 text-purple-600 mb-6" />
@@ -920,7 +1012,7 @@ function QueryPage({ db, userId, isAuthReady, setDbError }) {
                 {aiSummary}
               </div>
             )}
-
+            
             <div className="flex flex-col sm:flex-row justify-end space-y-3 sm:space-y-0 sm:space-x-4 pt-6 border-t border-slate-200">
               {!isAiLoading && aiSummary && (
                  <button
@@ -949,3 +1041,4 @@ const Th = ({ children, className = '' }) => <th scope="col" className={`px-6 py
 const Td = ({ children, className = '' }) => <td className={`px-6 py-5 whitespace-nowrap text-base text-slate-700 ${className}`}>{children}</td>;
 
 export default App;
+
