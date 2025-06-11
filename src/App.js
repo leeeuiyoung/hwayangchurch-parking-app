@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, addDoc, getDocs, query, where, serverTimestamp, setLogLevel, deleteDoc, doc } from 'firebase/firestore';
-import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import { Save, Search, CalendarDays, Users, DollarSign, Clock, Building, Banknote, UserCircle, FileText, Trash2, AlertTriangle, ListChecks, Download, X, Sparkles, Copy, Loader2, PlayCircle, StopCircle, Info, History } from 'lucide-react';
+import LoginPage from './LoginPage'; 
 
 // --- 최종 수정: Firebase 접속 정보를 코드에 직접 포함 ---
 const firebaseConfig = {
@@ -48,36 +49,36 @@ const BANK_NAMES_WITH_OTHER = [...BANK_NAMES_RAW.sort((a, b) => a.localeCompare(
 const formInputOneUI = "block w-full px-5 py-3.5 text-base text-slate-800 bg-slate-100 border-2 border-slate-200 rounded-xl transition duration-150 ease-in-out placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:bg-white hover:border-slate-300";
 
 function App() {
+  const appId = firebaseConfig.appId;
+  
   const [currentPage, setCurrentPage] = useState('entry');
   const [userId, setUserId] = useState(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [authError, setAuthError] = useState(null);
   const [dbError, setDbError] = useState(null);
   
-  useEffect(() => {
-    if (!auth) {
-      setAuthError("Firebase Auth 서비스 초기화 실패");
-      setIsAuthReady(true);
-      return;
+useEffect(() => {
+  if (!auth) {
+    setAuthError("Firebase Auth 서비스 초기화 실패");
+    setIsAuthReady(true);
+    return;
+  }
+  
+  const unsubscribe = onAuthStateChanged(auth, (user) => {
+    if (user) {
+      // 사용자가 로그인되어 있으면, 그 사용자의 ID를 저장합니다.
+      setUserId(user.uid);
+    } else {
+      // 사용자가 로그아웃 상태이면, 사용자 ID를 null로 설정합니다.
+      setUserId(null);
     }
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        setUserId(user.uid);
-        setIsAuthReady(true);
-        setAuthError(null);
-      } else {
-        try {
-          await signInAnonymously(auth);
-        } catch (error) {
-          console.error("Firebase 로그인 오류:", error);
-          setAuthError(`로그인 실패: ${error.message}`);
-          setUserId(null);
-          setIsAuthReady(true);
-        }
-      }
-    });
-    return () => unsubscribe();
-  }, []);
+    // 로그인 상태 확인이 끝났으니, 준비 완료 상태로 변경합니다.
+    setIsAuthReady(true);
+  });
+
+  // 컴포넌트가 사라질 때 감시를 중단합니다. (메모리 누수 방지)
+  return () => unsubscribe();
+}, []); // 이 useEffect는 앱이 처음 시작될 때 딱 한 번만 실행됩니다.
 
   if (!auth || !db) {
       return (
@@ -99,9 +100,11 @@ function App() {
       </div>
     );
   }
-  if (authError && !userId) {
-    return <div className="p-6 text-red-700 bg-red-100 rounded-xl shadow-lg max-w-lg mx-auto mt-12 text-center"><strong>인증 오류</strong><p className="mt-2 text-sm">{authError}</p></div>;
+
+  if (!userId) {
+    return <LoginPage />;
   }
+
   if (dbError) {
     return <div className="p-6 text-red-700 bg-red-100 rounded-xl shadow-lg max-w-lg mx-auto mt-12 text-center"><strong>데이터베이스 오류</strong><p className="mt-2 text-sm">{dbError}</p></div>;
   }
