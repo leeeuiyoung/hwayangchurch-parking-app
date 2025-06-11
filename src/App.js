@@ -4,44 +4,29 @@ import { getFirestore, collection, addDoc, getDocs, query, where, serverTimestam
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { Save, Search, CalendarDays, Users, DollarSign, Clock, Building, Banknote, UserCircle, FileText, Trash2, AlertTriangle, ListChecks, Download, X, Sparkles, Copy, Loader2, PlayCircle, StopCircle, Info, History } from 'lucide-react';
 
-// 배포 및 미리보기 환경 호환 설정
-let firebaseConfig = {};
-let appId = 'default-church-parking-app';
-let geminiApiKey = '';
+// --- 최종 수정: Firebase 접속 정보를 코드에 직접 포함 ---
+const firebaseConfig = {
+    apiKey: "AIzaSyB8mujwEnMA0oynk5liia3QXPMWGQyPRfs",
+    authDomain: "hwayangchurch-parking-app.firebaseapp.com",
+    projectId: "hwayangchurch-parking-app",
+    storageBucket: "hwayangchurch-parking-app.appspot.com",
+    messagingSenderId: "104913357347",
+    appId: "1:104913357347:web:e3054f97d1d63b97cf7f96"
+};
 
-if (typeof process !== 'undefined' && process.env.REACT_APP_FIREBASE_API_KEY) {
-    // Vercel/Netlify/Local dev build environment
-    firebaseConfig = {
-        apiKey: process.env.REACT_APP_FIREBASE_API_KEY,
-        authDomain: process.env.REACT_APP_AUTH_DOMAIN,
-        projectId: process.env.REACT_APP_PROJECT_ID,
-        storageBucket: process.env.REACT_APP_STORAGE_BUCKET,
-        messagingSenderId: process.env.REACT_APP_MESSAGING_SENDER_ID,
-        appId: process.env.REACT_APP_APP_ID_FIREBASE
-    };
-    appId = process.env.REACT_APP_ID || 'default-church-parking-app';
-    geminiApiKey = process.env.REACT_APP_GEMINI_API_KEY || "";
-} else if (typeof __firebase_config !== 'undefined') {
-    // Canvas 환경 변수가 있는지 먼저 확인
-    // eslint-disable-next-line no-undef
-    firebaseConfig = JSON.parse(__firebase_config);
-    // eslint-disable-next-line no-undef
-    appId = __app_id || 'default-church-parking-app';
-}
+const appId = 'hwayang-church-parking'; // 앱 ID 직접 설정
+// Gemini API 키는 Netlify 환경 변수를 계속 사용합니다. (이 값은 민감 정보이므로 코드에 직접 넣지 않는 것이 좋습니다.)
+const geminiApiKey = (typeof process !== 'undefined' && process.env.REACT_APP_GEMINI_API_KEY) || "";
 
 let app;
 let db;
 let auth;
 
 try {
-  if (firebaseConfig.apiKey) {
-    app = initializeApp(firebaseConfig);
-    db = getFirestore(app);
-    auth = getAuth(app);
-    setLogLevel('debug');
-  } else {
-    throw new Error("Firebase API Key is missing from environment variables.");
-  }
+  app = initializeApp(firebaseConfig);
+  db = getFirestore(app);
+  auth = getAuth(app);
+  setLogLevel('debug');
 } catch (error) {
   console.error("Firebase 초기화 오류:", error);
 }
@@ -98,7 +83,7 @@ function App() {
       return (
           <div className="p-6 text-red-700 bg-red-100 rounded-xl shadow-lg max-w-lg mx-auto mt-12 text-center">
               <strong>Firebase 초기화 실패</strong>
-              <p className="mt-2 text-sm">Firebase 설정에 문제가 있어 앱을 시작할 수 없습니다. 배포 서비스의 환경 변수를 확인해주세요.</p>
+              <p className="mt-2 text-sm">Firebase 설정에 문제가 있어 앱을 시작할 수 없습니다.</p>
           </div>
       );
   }
@@ -465,7 +450,7 @@ function QueryPage({ db, userId, isAuthReady, setDbError }) {
 
   const [recordingSession, setRecordingSession] = useState(null);
   const [completedSessions, setCompletedSessions] = useState([]);
-
+  
   const handleSearch = useCallback(async (searchParams = {}) => {
     if (!isAuthReady || !userId || !db) {
       setMessage('데이터베이스 연결이 준비되지 않았습니다.');
