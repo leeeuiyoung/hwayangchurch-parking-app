@@ -1,35 +1,38 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, addDoc, getDocs, query, where, serverTimestamp, setLogLevel, deleteDoc, doc } from 'firebase/firestore';
-import { getAuth, onAuthStateChanged } from 'firebase/auth';
+import { getAuth, onAuthStateChanged, signOut } from 'firebase/auth';
 import { Save, Search, CalendarDays, Users, DollarSign, Clock, Building, Banknote, UserCircle, FileText, Trash2, AlertTriangle, ListChecks, Download, X, Sparkles, Copy, Loader2, PlayCircle, StopCircle, Info, History } from 'lucide-react';
-import LoginPage from './LoginPage'; 
+import LoginPage from './LoginPage';
+import EntryForm from './EntryForm'; 
+import QueryPage from './QueryPage';
 
-// --- 최종 수정: Firebase 접속 정보를 코드에 직접 포함 ---
+// --- 올바른 방식: .env.local 파일에서 환경 변수를 가져옵니다. ---
 const firebaseConfig = {
-    apiKey: "AIzaSyB8mujwEnMA0oynk5liia3QXPMWGQyPRfs",
-    authDomain: "hwayangchurch-parking-app.firebaseapp.com",
-    projectId: "hwayangchurch-parking-app",
-    storageBucket: "hwayangchurch-parking-app.appspot.com",
-    messagingSenderId: "104913357347",
-    appId: "1:104913357347:web:e3054f97d1d63b97cf7f96"
+    apiKey: process.env.REACT_APP_FIREBASE_API_KEY,
+    authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN,
+    projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID,
+    storageBucket: process.env.REACT_APP_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID,
+    appId: process.env.REACT_APP_FIREBASE_APP_ID
 };
 
-const appId = 'hwayang-church-parking'; // 앱 ID 직접 설정
-// Gemini API 키는 Netlify 환경 변수를 계속 사용합니다. (이 값은 민감 정보이므로 코드에 직접 넣지 않는 것이 좋습니다.)
-const geminiApiKey = (typeof process !== 'undefined' && process.env.REACT_APP_GEMINI_API_KEY) || "";
+// Gemini API 키도 환경 변수에서 가져옵니다.
+const geminiApiKey = process.env.REACT_APP_GEMINI_API_KEY;
 
 let app;
 let db;
 let auth;
 
-try {
-  app = initializeApp(firebaseConfig);
-  db = getFirestore(app);
-  auth = getAuth(app);
-  setLogLevel('debug');
-} catch (error) {
-  console.error("Firebase 초기화 오류:", error);
+// 앱 시작 시 Firebase를 초기화합니다.
+if (firebaseConfig.apiKey) {
+    try {
+      app = initializeApp(firebaseConfig);
+      db = getFirestore(app);
+      auth = getAuth(app);
+    } catch (error) {
+      console.error("Firebase 초기화 오류:", error);
+    }
 }
 
 const PARKING_LOCATIONS = [
