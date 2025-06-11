@@ -14,15 +14,12 @@ const firebaseConfig = {
     messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID,
     appId: process.env.REACT_APP_FIREBASE_APP_ID
 };
-
 const geminiApiKey = process.env.REACT_APP_GEMINI_API_KEY;
 
 // --- Firebase 초기화 ---
 let app;
 let db;
 let auth;
-
-// apiKey가 실제로 존재할 때만 초기화를 시도합니다.
 if (firebaseConfig.apiKey && firebaseConfig.appId) {
     try {
       app = initializeApp(firebaseConfig);
@@ -54,7 +51,6 @@ const FormItem = ({ icon: IconComponent, label, children }) => (
         {children}
     </div>
 );
-
 const Th = ({ children, className = '' }) => <th scope="col" className={`px-6 py-4 text-left text-sm font-semibold text-slate-600 uppercase tracking-wider ${className}`}>{children}</th>;
 const Td = ({ children, className = '' }) => <td className={`px-6 py-5 whitespace-nowrap text-base text-slate-700 ${className}`}>{children}</td>;
 
@@ -62,7 +58,7 @@ const Td = ({ children, className = '' }) => <td className={`px-6 py-5 whitespac
 // ==================================================================
 // EntryForm 컴포넌트
 // ==================================================================
-function EntryForm({ db, userId, setDbError }) {
+function EntryForm({ db, userId, setDbError, appId }) {
     const [parkingLocation, setParkingLocation] = useState(PARKING_LOCATIONS[0]);
     const [parkingDate, setParkingDate] = useState(new Date().toISOString().split('T')[0]);
     const [name, setName] = useState('');
@@ -82,10 +78,10 @@ function EntryForm({ db, userId, setDbError }) {
     const [showAccountInfoSuggestions, setShowAccountInfoSuggestions] = useState(false);
 
     useEffect(() => {
-        if (db && userId) {
+        if (db && userId && appId) {
             const fetchParkingRecords = async () => {
                 try {
-                    const recordsRef = collection(db, `/artifacts/${firebaseConfig.appId}/public/data/parkingRecords`);
+                    const recordsRef = collection(db, `/artifacts/${appId}/public/data/parkingRecords`);
                     const q = query(recordsRef);
                     const querySnapshot = await getDocs(q);
                     const records = [];
@@ -105,7 +101,7 @@ function EntryForm({ db, userId, setDbError }) {
             };
             fetchParkingRecords();
         }
-    }, [db, userId, setDbError]);
+    }, [db, userId, setDbError, appId]);
 
     const handleNameChange = (e) => {
         const value = e.target.value;
@@ -214,7 +210,7 @@ function EntryForm({ db, userId, setDbError }) {
         }
         const accountInfoString = `${finalBankName}/${accountNumber.trim()}`;
         const newRecord = {
-            appId: firebaseConfig.appId,
+            appId: appId,
             userId: userId,
             parkingLocation,
             parkingDate,
@@ -229,7 +225,7 @@ function EntryForm({ db, userId, setDbError }) {
             createdAt: serverTimestamp()
         };
         try {
-            await addDoc(collection(db, `/artifacts/${firebaseConfig.appId}/public/data/parkingRecords`), newRecord);
+            await addDoc(collection(db, `/artifacts/${appId}/public/data/parkingRecords`), newRecord);
             setMessage({ type: 'success', text: '데이터가 성공적으로 저장되었습니다.' });
 
             setName('');
@@ -240,6 +236,7 @@ function EntryForm({ db, userId, setDbError }) {
             setParkingDurationOption('4');
             setCustomDuration('');
             setHourlyRate(DEFAULT_HOURLY_RATE.toString());
+
         } catch (error) {
             console.error("데이터 저장 오류: ", error);
             setMessage({ type: 'error', text: `저장 오류: ${error.message}` });
@@ -306,7 +303,7 @@ function EntryForm({ db, userId, setDbError }) {
 // ==================================================================
 // QueryPage 컴포넌트
 // ==================================================================
-function QueryPage({ db, userId, setDbError }) {
+function QueryPage({ db, userId, setDbError, appId, geminiApiKey }) {
     const [searchName, setSearchName] = useState('');
     const [searchStartDate, setSearchStartDate] = useState('');
     const [searchEndDate, setSearchEndDate] = useState('');
@@ -341,7 +338,7 @@ function QueryPage({ db, userId, setDbError }) {
         const { name = searchName, startDate = searchStartDate, endDate = searchEndDate, location = searchParkingLocation } = searchParams;
 
         try {
-            const parkingRecordsRef = collection(db, `/artifacts/${firebaseConfig.appId}/public/data/parkingRecords`);
+            const parkingRecordsRef = collection(db, `/artifacts/${appId}/public/data/parkingRecords`);
             let q = query(parkingRecordsRef);
 
             if (startDate) {
@@ -404,7 +401,7 @@ function QueryPage({ db, userId, setDbError }) {
         } finally {
             setIsLoading(false);
         }
-    }, [userId, db, searchName, searchStartDate, searchEndDate, searchParkingLocation, setDbError]);
+    }, [userId, db, searchName, searchStartDate, searchEndDate, searchParkingLocation, setDbError, appId]);
     
     useEffect(() => {
         const savedSession = localStorage.getItem('parkingRecordingSession');
@@ -603,7 +600,7 @@ function QueryPage({ db, userId, setDbError }) {
         if (!itemToDelete || !db) return;
         setIsLoading(true);
         try {
-            await deleteDoc(doc(db, `/artifacts/${firebaseConfig.appId}/public/data/parkingRecords`, itemToDelete));
+            await deleteDoc(doc(db, `/artifacts/${appId}/public/data/parkingRecords`, itemToDelete));
             setDeleteMessage({ type: 'success', text: '항목이 성공적으로 삭제되었습니다.'});
             await handleSearch({startDate: searchStartDate, endDate: searchEndDate, name: searchName, location: searchParkingLocation});
             setShowDeleteModal(false);
@@ -619,155 +616,46 @@ function QueryPage({ db, userId, setDbError }) {
     
     return (
         <div className="space-y-12">
-            <div className="bg-white p-8 sm:p-12 rounded-3xl shadow-2xl">
-                <h1 className="text-4xl font-bold text-slate-800 mb-6 text-center">주차 정보 조회</h1>
-                
-                <div className="bg-sky-50 border-2 border-sky-200 p-6 rounded-2xl mb-10">
-                    <h2 className="text-xl font-semibold text-sky-800 mb-4 flex items-center"><Clock className="w-6 h-6 mr-3"/>기록 세션 관리</h2>
-                    <div className="flex flex-col sm:flex-row gap-4">
-                        <button onClick={handleStartRecording} disabled={!!recordingSession} className="flex-1 bg-green-500 hover:bg-green-600 text-white font-semibold py-3 px-5 rounded-xl shadow-md transition-all duration-150 ease-in-out flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed">
-                            <PlayCircle className="w-5 h-5 mr-2.5"/>기록 시작
-                        </button>
-                        <button onClick={handleStopRecording} disabled={!recordingSession} className="flex-1 bg-red-500 hover:bg-red-600 text-white font-semibold py-3 px-5 rounded-xl shadow-md transition-all duration-150 ease-in-out flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed">
-                            <StopCircle className="w-5 h-5 mr-2.5"/>기록 중단
-                        </button>
-                    </div>
-                    {recordingSession && (
-                        <div className="mt-4 p-4 bg-green-100 text-green-800 rounded-lg text-sm flex items-center">
-                            <Info className="w-5 h-5 mr-3 shrink-0"/>
-                            <span>기록이 진행 중입니다. 시작 시간: <strong>{new Date(recordingSession.startTime).toLocaleString()}</strong></span>
-                        </div>
-                    )}
-                </div>
-                
-                {completedSessions.length > 0 && (
-                    <div className="bg-gray-50 border-2 border-gray-200 p-6 rounded-2xl mb-10">
-                        <h2 className="text-xl font-semibold text-gray-800 mb-4 flex items-center"><History className="w-6 h-6 mr-3"/>완료된 기록</h2>
-                        <ul className="space-y-2 max-h-48 overflow-y-auto">
-                            {completedSessions.map(session => (
-                                <li key={session.id}>
-                                    <button onClick={() => handleSessionClick(session)} className="w-full text-left p-3 bg-white hover:bg-gray-100 rounded-lg border border-gray-300 transition-all duration-150">
-                                        <p className="font-semibold text-gray-700">{new Date(session.startTime).toLocaleString()} ~ {new Date(session.endTime).toLocaleString()}</p>
-                                    </button>
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
-                )}
-
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-x-8 gap-y-10 mb-12 items-end">
-                    <div><label htmlFor="searchName" className="block text-lg font-semibold text-slate-700 mb-2.5">이름 검색</label><input type="text" id="searchName" value={searchName} onChange={(e) => setSearchName(e.target.value)} placeholder="이름 입력" className={formInputOneUI}/></div>
-                    <div><label htmlFor="searchParkingLocation" className="block text-lg font-semibold text-slate-700 mb-2.5">주차 장소 선택</label><select id="searchParkingLocation" value={searchParkingLocation} onChange={(e) => setSearchParkingLocation(e.target.value)} className={formInputOneUI}><option value={ALL_LOCATIONS_VALUE}>전체 주차 장소</option>{PARKING_LOCATIONS.map(loc => <option key={loc} value={loc}>{loc}</option>)}</select></div>
-                    <div><label htmlFor="searchStartDate" className="block text-lg font-semibold text-slate-700 mb-2.5">시작 날짜</label><input type="date" id="searchStartDate" value={searchStartDate} onChange={(e) => setSearchStartDate(e.target.value)} className={formInputOneUI}/></div>
-                    <div><label htmlFor="searchEndDate" className="block text-lg font-semibold text-slate-700 mb-2.5">종료 날짜</label><input type="date" id="searchEndDate" value={searchEndDate} onChange={(e) => setSearchEndDate(e.target.value)} className={formInputOneUI}/></div>
-                </div>
-                <div className="flex flex-col sm:flex-row gap-5">
-                    <button id="search-button" onClick={() => handleSearch()} disabled={isLoading} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-4 px-6 rounded-xl shadow-lg transition-all duration-150 ease-in-out flex items-center justify-center disabled:opacity-70 focus:outline-none focus:ring-4 focus:ring-offset-2 focus:ring-blue-300 text-lg">
-                        {isLoading && !isAiLoading ? <Loader2 className="animate-spin -ml-1 mr-3 h-6 w-6 text-white" /> : <Search className="w-6 h-6 mr-3" />}
-                        {isLoading && !isAiLoading ? '검색 중...' : '검색하기'}
-                    </button>
-                    <button onClick={downloadExcel} disabled={results.length === 0 || isLoading} className="flex-1 bg-green-600 hover:bg-green-700 text-white font-semibold py-4 px-6 rounded-xl shadow-lg transition-all duration-150 ease-in-out flex items-center justify-center disabled:opacity-70 focus:outline-none focus:ring-4 focus:ring-offset-2 focus:ring-green-300 text-lg">
-                        <Download className="w-6 h-6 mr-3" />
-                        엑셀로 다운로드
-                    </button>
-                </div>
-                <div className="mt-5"><button onClick={handleAiAnalysis} disabled={results.length === 0 || isLoading || isAiLoading} className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-4 px-6 rounded-xl shadow-lg transition-all duration-150 ease-in-out flex items-center justify-center disabled:opacity-70 focus:outline-none focus:ring-4 focus:ring-offset-2 focus:ring-purple-300 text-lg">
-                    {isAiLoading ? <Loader2 className="animate-spin -ml-1 mr-3 h-6 w-6 text-white" /> : <Sparkles className="w-6 h-6 mr-3" />}
-                    {isAiLoading ? 'AI 분석 중...' : '✨ AI 주차 데이터 분석'}
-                </button></div>
-                {message && <p className="text-center text-slate-600 mt-10 text-base">{message}</p>}
-                {deleteMessage.text && !showDeleteModal && <div className={`p-4 rounded-xl mt-10 text-sm ${deleteMessage.type === 'success' ? 'bg-green-50 text-green-700 border border-green-300' : 'bg-red-50 text-red-700 border border-red-300'}`}>{deleteMessage.text}</div>}
+          <div className="bg-white p-8 sm:p-12 rounded-3xl shadow-2xl">
+            <h1 className="text-4xl font-bold text-slate-800 mb-6 text-center">주차 정보 조회</h1>
+            <div className="bg-sky-50 border-2 border-sky-200 p-6 rounded-2xl mb-10">
+              <h2 className="text-xl font-semibold text-sky-800 mb-4 flex items-center"><Clock className="w-6 h-6 mr-3"/>기록 세션 관리</h2>
+              <div className="flex flex-col sm:flex-row gap-4">
+                <button onClick={handleStartRecording} disabled={!!recordingSession} className="flex-1 bg-green-500 hover:bg-green-600 text-white font-semibold py-3 px-5 rounded-xl shadow-md transition-all duration-150 ease-in-out flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"><PlayCircle className="w-5 h-5 mr-2.5"/>기록 시작</button>
+                <button onClick={handleStopRecording} disabled={!recordingSession} className="flex-1 bg-red-500 hover:bg-red-600 text-white font-semibold py-3 px-5 rounded-xl shadow-md transition-all duration-150 ease-in-out flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"><StopCircle className="w-5 h-5 mr-2.5"/>기록 중단</button>
+              </div>
+              {recordingSession && <div className="mt-4 p-4 bg-green-100 text-green-800 rounded-lg text-sm flex items-center"><Info className="w-5 h-5 mr-3 shrink-0"/><span>기록이 진행 중입니다. 시작 시간: <strong>{new Date(recordingSession.startTime).toLocaleString()}</strong></span></div>}
             </div>
-
-            {results.length > 0 && (
-                <div className="bg-white p-8 sm:p-10 rounded-2xl shadow-xl mb-10">
-                    <h2 className="text-2xl font-semibold text-slate-800 mb-5">선택 기간 총 주차비용</h2>
-                    <p className="text-4xl font-bold text-blue-600">{formatCurrency(totalFee)}</p>
-                </div>
+            {completedSessions.length > 0 && (
+              <div className="bg-gray-50 border-2 border-gray-200 p-6 rounded-2xl mb-10">
+                <h2 className="text-xl font-semibold text-gray-800 mb-4 flex items-center"><History className="w-6 h-6 mr-3"/>완료된 기록</h2>
+                <ul className="space-y-2 max-h-48 overflow-y-auto">
+                  {completedSessions.map(session => (
+                    <li key={session.id}><button onClick={() => handleSessionClick(session)} className="w-full text-left p-3 bg-white hover:bg-gray-100 rounded-lg border border-gray-300 transition-all duration-150"><p className="font-semibold text-gray-700">{new Date(session.startTime).toLocaleString()} ~ {new Date(session.endTime).toLocaleString()}</p></button></li>
+                  ))}
+                </ul>
+              </div>
             )}
-            
-            {Object.keys(nameAccountTotals).length > 0 && (
-                <div className="bg-white p-8 sm:p-10 rounded-2xl shadow-xl mb-10">
-                    <h2 className="text-2xl font-semibold text-slate-800 mb-8 flex items-center"><ListChecks size={30} className="mr-4 text-blue-600" />이름 및 계좌별 합계</h2>
-                    <ul className="space-y-5">
-                        {Object.values(nameAccountTotals).sort((a, b) => a.name.localeCompare(b.name, 'ko-KR') || a.accountInfo.localeCompare(b.accountInfo)).map((data) => (
-                            <li key={`${data.name}-${data.accountInfo}`} className="p-6 border border-slate-200 rounded-xl hover:shadow-lg transition-shadow duration-200 bg-slate-50">
-                                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
-                                    <div className="mb-2 sm:mb-0 flex-grow">
-                                        <p className="text-xl font-semibold text-slate-800">{data.name}</p>
-                                        <p className="text-sm text-slate-500 mt-1.5">{data.accountInfo}</p>
-                                    </div>
-                                    <p className="text-2xl font-bold text-blue-600 sm:text-right whitespace-nowrap mt-2 sm:mt-0">{formatCurrency(data.totalFee)}</p>
-                                </div>
-                            </li>
-                        ))}
-                    </ul>
-                </div>
-            )}
-
-            {results.length > 0 && (
-                <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
-                    <h2 className="text-2xl font-semibold text-slate-800 p-8 sm:p-10 pb-5">상세 주차 기록</h2>
-                    <div className="overflow-x-auto"><table className="min-w-full">
-                        <thead className="bg-slate-100 border-b-2 border-slate-200"><tr><Th>날짜</Th><Th>이름</Th><Th>직분</Th><Th>주차장소</Th><Th>주차시간</Th><Th>시간당요금</Th><Th>계산된요금</Th><Th>계좌정보</Th><Th className="text-right pr-8">작업</Th></tr></thead>
-                        <tbody className="bg-white divide-y divide-slate-200">
-                            {results.map(record => (<tr key={record.id} className="hover:bg-slate-50/70 transition-colors duration-150"><Td>{record.parkingDate}</Td><Td>{record.name}</Td><Td>{record.position}</Td><Td>{record.parkingLocation}</Td><Td>{record.parkingDurationHours}시간 {record.isCustomDuration ? `(${record.customDurationDetail})` : ''}</Td><Td>{formatCurrency(record.hourlyRate)}</Td><Td className="font-semibold text-blue-600">{formatCurrency(record.calculatedFee)}</Td><Td>{record.accountInfo}</Td><Td className="text-right pr-6"><button onClick={() => handleDeleteAttempt(record.id)} className="text-red-600 hover:text-red-700 p-2.5 rounded-lg hover:bg-red-100 transition-colors" title="삭제"><Trash2 size={20} /></button></Td></tr>))}
-                        </tbody>
-                    </table></div>
-                </div>
-            )}
-            {results.length === 0 && !isLoading && !message && <div className="bg-white p-12 rounded-2xl shadow-xl text-center"><p className="text-slate-500 text-xl">조회할 조건을 입력하고 검색 버튼을 눌러주세요.</p></div>}
-            
-            {showDeleteModal && (
-                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
-                    <div className="bg-white p-8 sm:p-10 rounded-2xl shadow-2xl max-w-lg w-full">
-                        <div className="flex items-start mb-7">
-                            <div className="p-3.5 bg-red-100 rounded-full mr-6 shrink-0"><AlertTriangle className="text-red-500 w-9 h-9" /></div>
-                            <div>
-                                <h3 className="text-2xl font-semibold text-slate-800">항목 삭제 확인</h3>
-                                <p className="text-slate-600 mt-2.5 text-base">정말로 이 항목을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.</p>
-                            </div>
-                        </div>
-                        {deleteMessage.text && <div className={`p-4 rounded-xl mb-7 text-sm ${deleteMessage.type === 'success' ? 'bg-green-50 text-green-700 border border-green-300' : 'bg-red-50 text-red-700 border border-red-300'}`}>{deleteMessage.text}</div>}
-                        <div className="flex justify-end space-x-4">
-                            <button onClick={() => { setShowDeleteModal(false); setItemToDelete(null); }} disabled={isLoading && itemToDelete !== null} className="px-7 py-3.5 text-base font-medium text-slate-700 bg-slate-200 hover:bg-slate-300 rounded-xl transition-colors disabled:opacity-70 focus:outline-none focus:ring-4 focus:ring-offset-2 focus:ring-slate-300">취소</button>
-                            <button onClick={confirmDelete} disabled={isLoading && itemToDelete !== null} className="px-7 py-3.5 text-base font-medium text-white bg-red-600 hover:bg-red-700 rounded-xl transition-colors flex items-center disabled:opacity-70 focus:outline-none focus:ring-4 focus:ring-offset-2 focus:ring-red-300">{isLoading && itemToDelete !== null ? <Loader2 className="animate-spin -ml-1 mr-2.5 h-5 w-5 text-white" /> : <Trash2 size={18} className="mr-2.5" />}{isLoading && itemToDelete !== null ? '삭제 중...' : '삭제'}</button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {showAiSummaryModal && (
-                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
-                    <div className="bg-white p-8 sm:p-10 rounded-2xl shadow-2xl max-w-2xl w-full flex flex-col" style={{maxHeight: '90vh'}}>
-                        <div className="flex justify-between items-center mb-6">
-                            <h3 className="text-2xl font-semibold text-slate-800 flex items-center"><Sparkles className="w-7 h-7 mr-3 text-purple-600" /> AI 주차 데이터 분석 결과</h3>
-                            <button onClick={() => setShowAiSummaryModal(false)} className="text-slate-500 hover:text-slate-700 p-2 rounded-full hover:bg-slate-100 transition-colors"><X size={24} /></button>
-                        </div>
-                        {isAiLoading && (
-                            <div className="flex flex-col items-center justify-center py-10">
-                                <Loader2 className="animate-spin h-12 w-12 text-purple-600 mb-6" />
-                                <p className="text-slate-600 text-lg">AI가 데이터를 분석하고 있습니다...</p>
-                            </div>
-                        )}
-                        {aiError && !isAiLoading && (
-                            <div className="p-5 bg-red-50 border border-red-300 rounded-xl text-red-700 mb-6">
-                                <p className="font-semibold">오류 발생</p>
-                                <p className="text-sm mt-1">{aiError}</p>
-                            </div>
-                        )}
-                        {!isAiLoading && aiSummary && (
-                            <div className="prose prose-sm sm:prose-base max-w-none overflow-y-auto flex-grow mb-6 pr-2 whitespace-pre-wrap">
-                                {aiSummary}
-                            </div>
-                        )}
-                        <div className="flex flex-col sm:flex-row justify-end space-y-3 sm:space-y-0 sm:space-x-4 pt-6 border-t border-slate-200">
-                            {!isAiLoading && aiSummary && (<button onClick={() => copyToClipboard(aiSummary)} className="px-6 py-3 text-base font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors flex items-center justify-center focus:outline-none focus:ring-4 focus:ring-offset-2 focus:ring-blue-300"><Copy size={18} className="mr-2.5" />{copied ? '복사 완료!' : '요약 복사하기'}</button>)}
-                            <button onClick={() => setShowAiSummaryModal(false)} className="px-6 py-3 text-base font-medium text-slate-700 bg-slate-200 hover:bg-slate-300 rounded-xl transition-colors focus:outline-none focus:ring-4 focus:ring-offset-2 focus:ring-slate-300">닫기</button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-x-8 gap-y-10 mb-12 items-end">
+              <div><label htmlFor="searchName" className="block text-lg font-semibold text-slate-700 mb-2.5">이름 검색</label><input type="text" id="searchName" value={searchName} onChange={(e) => setSearchName(e.target.value)} placeholder="이름 입력" className={formInputOneUI}/></div>
+              <div><label htmlFor="searchParkingLocation" className="block text-lg font-semibold text-slate-700 mb-2.5">주차 장소 선택</label><select id="searchParkingLocation" value={searchParkingLocation} onChange={(e) => setSearchParkingLocation(e.target.value)} className={formInputOneUI}><option value={ALL_LOCATIONS_VALUE}>전체 주차 장소</option>{PARKING_LOCATIONS.map(loc => <option key={loc} value={loc}>{loc}</option>)}</select></div>
+              <div><label htmlFor="searchStartDate" className="block text-lg font-semibold text-slate-700 mb-2.5">시작 날짜</label><input type="date" id="searchStartDate" value={searchStartDate} onChange={(e) => setSearchStartDate(e.target.value)} className={formInputOneUI}/></div>
+              <div><label htmlFor="searchEndDate" className="block text-lg font-semibold text-slate-700 mb-2.5">종료 날짜</label><input type="date" id="searchEndDate" value={searchEndDate} onChange={(e) => setSearchEndDate(e.target.value)} className={formInputOneUI}/></div>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-5">
+              <button id="search-button" onClick={() => handleSearch()} disabled={isLoading} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-4 px-6 rounded-xl shadow-lg transition-all duration-150 ease-in-out flex items-center justify-center disabled:opacity-70 focus:outline-none focus:ring-4 focus:ring-offset-2 focus:ring-blue-300 text-lg">{isLoading && !isAiLoading ? <Loader2 className="animate-spin -ml-1 mr-3 h-6 w-6 text-white" /> : <Search className="w-6 h-6 mr-3" />}{isLoading && !isAiLoading ? '검색 중...' : '검색하기'}</button>
+              <button onClick={downloadExcel} disabled={results.length === 0 || isLoading} className="flex-1 bg-green-600 hover:bg-green-700 text-white font-semibold py-4 px-6 rounded-xl shadow-lg transition-all duration-150 ease-in-out flex items-center justify-center disabled:opacity-70 focus:outline-none focus:ring-4 focus:ring-offset-2 focus:ring-green-300 text-lg"><Download className="w-6 h-6 mr-3" />엑셀로 다운로드</button>
+            </div>
+            <div className="mt-5"><button onClick={handleAiAnalysis} disabled={results.length === 0 || isLoading || isAiLoading} className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-4 px-6 rounded-xl shadow-lg transition-all duration-150 ease-in-out flex items-center justify-center disabled:opacity-70 focus:outline-none focus:ring-4 focus:ring-offset-2 focus:ring-purple-300 text-lg">{isAiLoading ? <Loader2 className="animate-spin -ml-1 mr-3 h-6 w-6 text-white" /> : <Sparkles className="w-6 h-6 mr-3" />}{isAiLoading ? 'AI 분석 중...' : '✨ AI 주차 데이터 분석'}</button></div>
+            {message && <p className="text-center text-slate-600 mt-10 text-base">{message}</p>}
+            {deleteMessage.text && !showDeleteModal && <div className={`p-4 rounded-xl mt-10 text-sm ${deleteMessage.type === 'success' ? 'bg-green-50 text-green-700 border border-green-300' : 'bg-red-50 text-red-700 border border-red-300'}`}>{deleteMessage.text}</div>}
+          </div>
+          {results.length > 0 && <div className="bg-white p-8 sm:p-10 rounded-2xl shadow-xl mb-10"><h2 className="text-2xl font-semibold text-slate-800 mb-5">선택 기간 총 주차비용</h2><p className="text-4xl font-bold text-blue-600">{formatCurrency(totalFee)}</p></div>}
+          {Object.keys(nameAccountTotals).length > 0 && <div className="bg-white p-8 sm:p-10 rounded-2xl shadow-xl mb-10"><h2 className="text-2xl font-semibold text-slate-800 mb-8 flex items-center"><ListChecks size={30} className="mr-4 text-blue-600" />이름 및 계좌별 합계</h2><ul className="space-y-5">{Object.values(nameAccountTotals).sort((a, b) => a.name.localeCompare(b.name, 'ko-KR') || a.accountInfo.localeCompare(b.accountInfo)).map((data) => (<li key={`${data.name}-${data.accountInfo}`} className="p-6 border border-slate-200 rounded-xl hover:shadow-lg transition-shadow duration-200 bg-slate-50"><div className="flex flex-col sm:flex-row justify-between items-start sm:items-center"><div className="mb-2 sm:mb-0 flex-grow"><p className="text-xl font-semibold text-slate-800">{data.name}</p><p className="text-sm text-slate-500 mt-1.5">{data.accountInfo}</p></div><p className="text-2xl font-bold text-blue-600 sm:text-right whitespace-nowrap mt-2 sm:mt-0">{formatCurrency(data.totalFee)}</p></div></li>))}</ul></div>}
+          {results.length > 0 && <div className="bg-white rounded-2xl shadow-xl overflow-hidden"><h2 className="text-2xl font-semibold text-slate-800 p-8 sm:p-10 pb-5">상세 주차 기록</h2><div className="overflow-x-auto"><table className="min-w-full"><thead className="bg-slate-100 border-b-2 border-slate-200"><tr><Th>날짜</Th><Th>이름</Th><Th>직분</Th><Th>주차장소</Th><Th>주차시간</Th><Th>시간당요금</Th><Th>계산된요금</Th><Th>계좌정보</Th><Th className="text-right pr-8">작업</Th></tr></thead><tbody className="bg-white divide-y divide-slate-200">{results.map(record => (<tr key={record.id} className="hover:bg-slate-50/70 transition-colors duration-150"><Td>{record.parkingDate}</Td><Td>{record.name}</Td><Td>{record.position}</Td><Td>{record.parkingLocation}</Td><Td>{record.parkingDurationHours}시간 {record.isCustomDuration ? `(${record.customDurationDetail})` : ''}</Td><Td>{formatCurrency(record.hourlyRate)}</Td><Td className="font-semibold text-blue-600">{formatCurrency(record.calculatedFee)}</Td><Td>{record.accountInfo}</Td><Td className="text-right pr-6"><button onClick={() => handleDeleteAttempt(record.id)} className="text-red-600 hover:text-red-700 p-2.5 rounded-lg hover:bg-red-100 transition-colors" title="삭제"><Trash2 size={20} /></button></Td></tr>))}</tbody></table></div></div>}
+          {results.length === 0 && !isLoading && !message && <div className="bg-white p-12 rounded-2xl shadow-xl text-center"><p className="text-slate-500 text-xl">조회할 조건을 입력하고 검색 버튼을 눌러주세요.</p></div>}
+          {showDeleteModal && (<div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-[100]"><div className="bg-white p-8 sm:p-10 rounded-2xl shadow-2xl max-w-lg w-full"><div className="flex items-start mb-7"><div className="p-3.5 bg-red-100 rounded-full mr-6 shrink-0"><AlertTriangle className="text-red-500 w-9 h-9" /></div><div><h3 className="text-2xl font-semibold text-slate-800">항목 삭제 확인</h3><p className="text-slate-600 mt-2.5 text-base">정말로 이 항목을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.</p></div></div>{deleteMessage.text && <div className={`p-4 rounded-xl mb-7 text-sm ${deleteMessage.type === 'success' ? 'bg-green-50 text-green-700 border border-green-300' : 'bg-red-50 text-red-700 border border-red-300'}`}>{deleteMessage.text}</div>}<div className="flex justify-end space-x-4"><button onClick={() => { setShowDeleteModal(false); setItemToDelete(null); }} disabled={isLoading && itemToDelete !== null} className="px-7 py-3.5 text-base font-medium text-slate-700 bg-slate-200 hover:bg-slate-300 rounded-xl transition-colors disabled:opacity-70 focus:outline-none focus:ring-4 focus:ring-offset-2 focus:ring-slate-300">취소</button><button onClick={confirmDelete} disabled={isLoading && itemToDelete !== null} className="px-7 py-3.5 text-base font-medium text-white bg-red-600 hover:bg-red-700 rounded-xl transition-colors flex items-center disabled:opacity-70 focus:outline-none focus:ring-4 focus:ring-offset-2 focus:ring-red-300">{isLoading && itemToDelete !== null ? <Loader2 className="animate-spin -ml-1 mr-2.5 h-5 w-5 text-white" /> : <Trash2 size={18} className="mr-2.5" />}{isLoading && itemToDelete !== null ? '삭제 중...' : '삭제'}</button></div></div></div>)}
+          {showAiSummaryModal && (<div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-[100]"><div className="bg-white p-8 sm:p-10 rounded-2xl shadow-2xl max-w-2xl w-full flex flex-col" style={{maxHeight: '90vh'}}><div className="flex justify-between items-center mb-6"><h3 className="text-2xl font-semibold text-slate-800 flex items-center"><Sparkles className="w-7 h-7 mr-3 text-purple-600" /> AI 주차 데이터 분석 결과</h3><button onClick={() => setShowAiSummaryModal(false)} className="text-slate-500 hover:text-slate-700 p-2 rounded-full hover:bg-slate-100 transition-colors"><X size={24} /></button></div>{isAiLoading && (<div className="flex flex-col items-center justify-center py-10"><Loader2 className="animate-spin h-12 w-12 text-purple-600 mb-6" /><p className="text-slate-600 text-lg">AI가 데이터를 분석하고 있습니다...</p></div>)}{aiError && !isAiLoading && (<div className="p-5 bg-red-50 border border-red-300 rounded-xl text-red-700 mb-6"><p className="font-semibold">오류 발생</p><p className="text-sm mt-1">{aiError}</p></div>)}{!isAiLoading && aiSummary && (<div className="prose prose-sm sm:prose-base max-w-none overflow-y-auto flex-grow mb-6 pr-2 whitespace-pre-wrap">{aiSummary}</div>)}<div className="flex flex-col sm:flex-row justify-end space-y-3 sm:space-y-0 sm:space-x-4 pt-6 border-t border-slate-200">{!isAiLoading && aiSummary && (<button onClick={() => copyToClipboard(aiSummary)} className="px-6 py-3 text-base font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors flex items-center justify-center focus:outline-none focus:ring-4 focus:ring-offset-2 focus:ring-blue-300"><Copy size={18} className="mr-2.5" />{copied ? '복사 완료!' : '요약 복사하기'}</button>)}<button onClick={() => setShowAiSummaryModal(false)} className="px-6 py-3 text-base font-medium text-slate-700 bg-slate-200 hover:bg-slate-300 rounded-xl transition-colors focus:outline-none focus:ring-4 focus:ring-offset-2 focus:ring-slate-300">닫기</button></div></div></div>)}
         </div>
     );
 }
@@ -851,8 +739,8 @@ function App() {
                 <p className="mt-1 text-sm">{dbError}</p>
             </div>
         }
-        {currentPage === 'entry' && <EntryForm db={db} userId={userId} setDbError={setDbError} />}
-        {currentPage === 'query' && <QueryPage db={db} userId={userId} setDbError={setDbError} />}
+        {currentPage === 'entry' && <EntryForm db={db} userId={userId} setDbError={setDbError} appId={firebaseConfig.appId} />}
+        {currentPage === 'query' && <QueryPage db={db} userId={userId} setDbError={setDbError} appId={firebaseConfig.appId} geminiApiKey={geminiApiKey} />}
       </main>
       <footer className="text-center py-4 text-xs text-slate-500 bg-slate-200">
         <p>© {new Date().getFullYear()} 교회 주차 관리 시스템.</p>
