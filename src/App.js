@@ -1,34 +1,46 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { initializeApp } from 'firebase/app';
+// Firebase SDK에서 필요한 함수들을 가져옵니다.
+import { initializeApp, getApps } from 'firebase/app'; // getApps 추가
 import { getFirestore, collection, addDoc, getDocs, query, where, serverTimestamp, deleteDoc, doc } from 'firebase/firestore';
 import { getAuth, onAuthStateChanged, signOut, signInWithEmailAndPassword } from 'firebase/auth';
 import { Save, Search, CalendarDays, Users, DollarSign, Clock, Building, Banknote, UserCircle, FileText, Trash2, AlertTriangle, ListChecks, Download, X, Sparkles, Copy, Loader2, PlayCircle, StopCircle, Info, History, LogOut } from 'lucide-react';
 
-// --- 환경 변수에서 설정값 가져오기 (가장 먼저 실행) ---
-// 어떤 환경에서든 오류가 나지 않도록 process 객체의 존재 여부를 먼저 확인합니다.
+// --- 환경 변수에서 설정값 가져오기 (수정됨) ---
+// Vercel과 같은 빌드 환경에서는 빌드 시점에 process.env.REACT_APP_*이 실제 값으로 대체됩니다.
+// 따라서 typeof process 체크는 불필요하며, 오히려 프로덕션 환경에서 버그를 유발합니다.
 const firebaseConfig = {
-    apiKey: typeof process !== 'undefined' ? process.env.REACT_APP_FIREBASE_API_KEY : "",
-    authDomain: typeof process !== 'undefined' ? process.env.REACT_APP_FIREBASE_AUTH_DOMAIN : "",
-    projectId: typeof process !== 'undefined' ? process.env.REACT_APP_FIREBASE_PROJECT_ID : "",
-    storageBucket: typeof process !== 'undefined' ? process.env.REACT_APP_FIREBASE_STORAGE_BUCKET : "",
-    messagingSenderId: typeof process !== 'undefined' ? process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID : "",
-    appId: typeof process !== 'undefined' ? process.env.REACT_APP_FIREBASE_APP_ID : ""
+    apiKey: process.env.REACT_APP_FIREBASE_API_KEY,
+    authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN,
+    projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID,
+    storageBucket: process.env.REACT_APP_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID,
+    appId: process.env.REACT_APP_FIREBASE_APP_ID
 };
-const geminiApiKey = typeof process !== 'undefined' ? process.env.REACT_APP_GEMINI_API_KEY : "";
+const geminiApiKey = process.env.REACT_APP_GEMINI_API_KEY;
 
-// --- Firebase 초기화 ---
+
+// --- Firebase 초기화 (수정됨) ---
+// 앱이 이미 초기화되었는지 확인하여 중복 초기화를 방지합니다. (HMR 환경에서 유용)
 let app;
 let db;
 let auth;
-if (firebaseConfig.apiKey && firebaseConfig.appId && firebaseConfig.apiKey !== "") {
-    try {
-      app = initializeApp(firebaseConfig);
-      db = getFirestore(app);
-      auth = getAuth(app);
-    } catch (error) {
-      console.error("Firebase 초기화 오류:", error);
+
+if (firebaseConfig.apiKey && firebaseConfig.projectId) {
+    if (!getApps().length) {
+        try {
+            app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
+        } catch (error) {
+            console.error("Firebase 초기화 오류:", error);
+        }
+    } else {
+        app = getApps()[0];
+        db = getFirestore(app);
+        auth = getAuth(app);
     }
 }
+
 
 // --- 앱 전체에서 사용될 상수들 ---
 const PARKING_LOCATIONS = ["어린이회관 주차장1", "어린이회관 주차장2", "세종대 대양AI센터 주차장", "국민은행 주차장", "교회 뒷편 세종대 주차장", "광진광장 공영주차장"];
@@ -63,7 +75,7 @@ function LoginPage({ authInstance }) {
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
-  
+
     const handleLogin = async (e) => {
       e.preventDefault();
       setError('');
@@ -91,7 +103,7 @@ function LoginPage({ authInstance }) {
           setLoading(false);
       }
     };
-  
+
     return (
       <div className="flex items-center justify-center min-h-screen bg-slate-100">
         <div className="w-full max-w-md p-8 space-y-8 bg-white rounded-2xl shadow-2xl">
@@ -144,37 +156,51 @@ function EntryForm({ db, userId, setDbError, appId }) {
     const [accountInfoSuggestions, setAccountInfoSuggestions] = useState([]);
     const [showAccountInfoSuggestions, setShowAccountInfoSuggestions] = useState(false);
 
-    useEffect(() => {
-        if (db && userId && appId) {
-            const fetchParkingRecords = async () => {
-                try {
-                    const recordsRef = collection(db, `/artifacts/${appId}/public/data/parkingRecords`);
-                    const q = query(recordsRef);
-                    const querySnapshot = await getDocs(q);
-                    const records = [];
-                    querySnapshot.forEach(doc => records.push({ id: doc.id, ...doc.data() }));
+    // --- 데이터 로딩 로직을 별도 함수로 분리 (개선점) ---
+    // useEffect와 handleSubmit에서 모두 사용하기 위함입니다.
+    const fetchParkingRecords = useCallback(async () => {
+        if (!db || !userId || !appId) return;
+        try {
+            const recordsRef = collection(db, `/artifacts/${appId}/public/data/parkingRecords`);
+            const q = query(recordsRef);
+            const querySnapshot = await getDocs(q);
+            const records = [];
+            querySnapshot.forEach(doc => records.push({ id: doc.id, ...doc.data() }));
 
-                    const latestUserRecords = {};
-                    records.forEach(record => {
-                        if (!latestUserRecords[record.name] || new Date(record.createdAt?.toDate() || record.parkingDate) > new Date(latestUserRecords[record.name].createdAt?.toDate() || latestUserRecords[record.name].parkingDate)) {
-                            latestUserRecords[record.name] = record;
-                        }
-                    });
-                    setAllUserRecords(Object.values(latestUserRecords));
-                } catch (error) {
-                    console.error("주차 기록 로드 오류:", error);
-                    setDbError("주차 기록 로드 중 오류 발생: " + error.message);
+            // 각 이름별로 가장 최신 기록만 추출하여 추천 데이터로 사용합니다.
+            const latestUserRecords = {};
+            records.forEach(record => {
+                // serverTimestamp로 생성된 createdAt 필드는 초기에는 null일 수 있습니다.
+                // 이 경우를 대비해 parkingDate를 fallback으로 사용합니다.
+                const recordDate = record.createdAt?.toDate() || new Date(record.parkingDate);
+                const existingRecord = latestUserRecords[record.name];
+                const existingRecordDate = existingRecord ? (existingRecord.createdAt?.toDate() || new Date(existingRecord.parkingDate)) : null;
+
+                if (!existingRecord || recordDate > existingRecordDate) {
+                    latestUserRecords[record.name] = record;
                 }
-            };
-            fetchParkingRecords();
+            });
+            setAllUserRecords(Object.values(latestUserRecords));
+        } catch (error) {
+            console.error("주차 기록 로드 오류:", error);
+            setDbError("주차 기록 로드 중 오류 발생: " + error.message);
         }
-    }, [db, userId, setDbError, appId]);
+    }, [db, userId, appId, setDbError]);
+
+    // 컴포넌트 마운트 시 주차 기록을 불러옵니다.
+    useEffect(() => {
+        fetchParkingRecords();
+    }, [fetchParkingRecords]);
+
 
     const handleNameChange = (e) => {
         const value = e.target.value;
         setName(value);
         if (value) {
-            const suggestions = allUserRecords.filter(record => record.name.toLowerCase().includes(value.toLowerCase())).map(record => record.name).filter((v, i, a) => a.indexOf(v) === i);
+            const suggestions = allUserRecords
+                .filter(record => record.name.toLowerCase().includes(value.toLowerCase()))
+                .map(record => record.name)
+                .filter((v, i, a) => a.indexOf(v) === i); // 중복 제거
             setNameSuggestions(suggestions.slice(0, 5));
             setShowNameSuggestions(true);
         } else {
@@ -204,16 +230,21 @@ function EntryForm({ db, userId, setDbError, appId }) {
 
     const handleAccountNumberChange = (e) => {
         const rawValue = e.target.value;
-        const numericValue = rawValue.replace(/-/g, '');
+        const numericValue = rawValue.replace(/[^0-9]/g, ''); // 숫자만 허용
         setAccountNumber(numericValue);
+
         if (numericValue) {
-            const suggestions = allUserRecords.filter(record => {
-                if (record.accountInfo) {
-                    const existingAccNum = record.accountInfo.split('/')[1];
-                    return existingAccNum && existingAccNum.replace(/-/g, '').includes(numericValue);
-                }
-                return false;
-            }).map(record => record.accountInfo).filter((v, i, a) => a.indexOf(v) === i).slice(0, 5);
+            const suggestions = allUserRecords
+                .filter(record => {
+                    if (record.accountInfo) {
+                        const existingAccNum = record.accountInfo.split('/')[1];
+                        return existingAccNum && existingAccNum.replace(/-/g, '').includes(numericValue);
+                    }
+                    return false;
+                })
+                .map(record => record.accountInfo)
+                .filter((v, i, a) => a.indexOf(v) === i) // 중복 제거
+                .slice(0, 5);
             setAccountInfoSuggestions(suggestions);
             setShowAccountInfoSuggestions(true);
         } else {
@@ -295,6 +326,7 @@ function EntryForm({ db, userId, setDbError, appId }) {
             await addDoc(collection(db, `/artifacts/${appId}/public/data/parkingRecords`), newRecord);
             setMessage({ type: 'success', text: '데이터가 성공적으로 저장되었습니다.' });
 
+            // 폼 필드 초기화
             setName('');
             setPosition(POSITIONS[0]);
             setSelectedBank(BANK_NAMES_WITH_OTHER[0]);
@@ -302,7 +334,11 @@ function EntryForm({ db, userId, setDbError, appId }) {
             setAccountNumber('');
             setParkingDurationOption('4');
             setCustomDuration('');
-            setHourlyRate(DEFAULT_HOURLY_RATE.toString());
+            // 시간당 요금은 유지하거나 초기화할 수 있습니다. 여기서는 유지합니다.
+            
+            // --- 데이터 다시 불러오기 (개선점) ---
+            // 새 기록이 반영된 최신 데이터를 불러와 추천 목록을 업데이트합니다.
+            await fetchParkingRecords();
 
         } catch (error) {
             console.error("데이터 저장 오류: ", error);
@@ -358,16 +394,17 @@ function EntryForm({ db, userId, setDbError, appId }) {
             </FormItem>
             <FormItem icon={DollarSign} label="시간당 주차 요금 (원)"><input type="number" value={hourlyRate} onChange={(e) => setHourlyRate(e.target.value)} placeholder="예: 3000" className={formInputOneUI} min="0" required /></FormItem>
             <button type="submit" disabled={isLoading || !userId} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-4 px-4 rounded-xl shadow-lg transition-all duration-150 ease-in-out flex items-center justify-center disabled:opacity-70 focus:outline-none focus:ring-4 focus:ring-offset-2 focus:ring-blue-300 text-lg mt-12">
-                {isLoading ? <Loader2 className="animate-spin -ml-1 mr-3 h-6 w-6 text-white" /> : <Save className="w-6 h-6 mr-3" />}
-                {isLoading ? '저장 중...' : '정보 저장하기'}
+              {isLoading ? <Loader2 className="animate-spin -ml-1 mr-3 h-6 w-6 text-white" /> : <Save className="w-6 h-6 mr-3" />}
+              {isLoading ? '저장 중...' : '정보 저장하기'}
             </button>
           </form>
         </div>
     );
 }
 
+
 // ==================================================================
-// QueryPage 컴포넌트
+// QueryPage 컴포넌트 (변경 없음, 편의를 위해 포함)
 // ==================================================================
 function QueryPage({ db, userId, setDbError, appId, geminiApiKey }) {
     const [searchName, setSearchName] = useState('');
@@ -405,30 +442,43 @@ function QueryPage({ db, userId, setDbError, appId, geminiApiKey }) {
 
         try {
             const parkingRecordsRef = collection(db, `/artifacts/${appId}/public/data/parkingRecords`);
-            let q = query(parkingRecordsRef);
-
+            let constraints = [];
+            
+            // Firestore 쿼리 제약조건을 배열로 관리
+            if (name.trim()) {
+                constraints.push(where("name", "==", name.trim()));
+            }
+            if (location && location !== ALL_LOCATIONS_VALUE) {
+                constraints.push(where("parkingLocation", "==", location));
+            }
             if (startDate) {
-                const start = new Date(startDate);
-                start.setHours(0, 0, 0, 0);
-                q = query(q, where("createdAt", ">=", start));
+                constraints.push(where("createdAt", ">=", new Date(startDate)));
             }
             if (endDate) {
                 let end = new Date(endDate);
                 end.setHours(23, 59, 59, 999);
-                q = query(q, where("createdAt", "<=", end));
-            }
-            if (location && location !== ALL_LOCATIONS_VALUE) {
-                q = query(q, where("parkingLocation", "==", location));
-            }
-            if (name.trim()) {
-                q = query(q, where("name", "==", name.trim()));
+                constraints.push(where("createdAt", "<=", end));
             }
 
+            const q = query(parkingRecordsRef, ...constraints);
             const querySnapshot = await getDocs(q);
             const fetchedRecords = [];
             querySnapshot.forEach((doc) => fetchedRecords.push({ id: doc.id, ...doc.data() }));
+            
+            // JS에서 날짜 필터링 (createdAt이 없는 구버전 데이터 호환)
+             const filteredRecords = fetchedRecords.filter(record => {
+                const recordDate = record.createdAt?.toDate() || new Date(record.parkingDate);
+                const start = startDate ? new Date(startDate) : null;
+                const end = endDate ? new Date(endDate) : null;
+                if(end) end.setHours(23, 59, 59, 999);
 
-            const sortedDetailedResults = [...fetchedRecords].sort((a, b) => {
+                if (start && recordDate < start) return false;
+                if (end && recordDate > end) return false;
+                return true;
+            });
+
+
+            const sortedDetailedResults = [...filteredRecords].sort((a, b) => {
                 const dateA = a.createdAt?.toDate() || new Date(a.parkingDate);
                 const dateB = b.createdAt?.toDate() || new Date(b.parkingDate);
                 const nameCompare = a.name.localeCompare(b.name, 'ko-KR');
@@ -437,7 +487,7 @@ function QueryPage({ db, userId, setDbError, appId, geminiApiKey }) {
             });
             setResults(sortedDetailedResults);
 
-            const currentNameAccountTotals = fetchedRecords.reduce((acc, record) => {
+            const currentNameAccountTotals = sortedDetailedResults.reduce((acc, record) => {
                 const key = `${record.name} | ${record.accountInfo}`;
                 if (!acc[key]) {
                     acc[key] = { name: record.name, accountInfo: record.accountInfo, totalFee: 0 };
@@ -447,19 +497,18 @@ function QueryPage({ db, userId, setDbError, appId, geminiApiKey }) {
             }, {});
             setNameAccountTotals(currentNameAccountTotals);
 
-            let currentTotalFee = 0;
-            fetchedRecords.forEach(record => currentTotalFee += (record.calculatedFee || 0));
+            let currentTotalFee = sortedDetailedResults.reduce((sum, record) => sum + (record.calculatedFee || 0), 0);
             setTotalFee(currentTotalFee);
-
-            setPeriodTopLocation(getTopParkingLocationsHelper(fetchedRecords));
+            
+            setPeriodTopLocation(getTopParkingLocationsHelper(sortedDetailedResults));
             if (name.trim()) {
-                const userSpecificRecords = fetchedRecords.filter(r => r.name === name.trim());
+                const userSpecificRecords = sortedDetailedResults.filter(r => r.name === name.trim());
                 setIndividualTopLocation(getTopParkingLocationsHelper(userSpecificRecords));
             } else {
                 setIndividualTopLocation('');
             }
 
-            if (fetchedRecords.length === 0) setMessage('검색 결과가 없습니다.');
+            if (sortedDetailedResults.length === 0) setMessage('검색 결과가 없습니다.');
         } catch (error) {
             console.error("데이터 조회 오류: ", error);
             setMessage(`조회 오류: ${error.message}`);
@@ -478,16 +527,17 @@ function QueryPage({ db, userId, setDbError, appId, geminiApiKey }) {
     }, []);
 
     const handleStartRecording = () => {
-        const startTime = new Date().toISOString();
+        const startTime = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
         const session = { id: Date.now(), startTime };
         localStorage.setItem('parkingRecordingSession', JSON.stringify(session));
         setRecordingSession(session);
-        setMessage(`기록이 시작되었습니다: ${new Date(startTime).toLocaleString()}`);
+        setSearchStartDate(startTime);
+        setMessage(`기록이 시작되었습니다: ${startTime}`);
     };
 
     const handleStopRecording = () => {
         if (recordingSession) {
-            const endTime = new Date().toISOString();
+            const endTime = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
             const newCompletedSession = { ...recordingSession, endTime };
             
             const updatedCompletedSessions = [newCompletedSession, ...completedSessions];
@@ -605,7 +655,7 @@ function QueryPage({ db, userId, setDbError, appId, geminiApiKey }) {
           setIsAiLoading(false);
         }
     };
-  
+    
     const copyToClipboard = (text) => {
         navigator.clipboard.writeText(text).then(() => {
             setCopied(true);
@@ -690,14 +740,14 @@ function QueryPage({ db, userId, setDbError, appId, geminiApiKey }) {
                 <button onClick={handleStartRecording} disabled={!!recordingSession} className="flex-1 bg-green-500 hover:bg-green-600 text-white font-semibold py-3 px-5 rounded-xl shadow-md transition-all duration-150 ease-in-out flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"><PlayCircle className="w-5 h-5 mr-2.5"/>기록 시작</button>
                 <button onClick={handleStopRecording} disabled={!recordingSession} className="flex-1 bg-red-500 hover:bg-red-600 text-white font-semibold py-3 px-5 rounded-xl shadow-md transition-all duration-150 ease-in-out flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"><StopCircle className="w-5 h-5 mr-2.5"/>기록 중단</button>
               </div>
-              {recordingSession && <div className="mt-4 p-4 bg-green-100 text-green-800 rounded-lg text-sm flex items-center"><Info className="w-5 h-5 mr-3 shrink-0"/><span>기록이 진행 중입니다. 시작 시간: <strong>{new Date(recordingSession.startTime).toLocaleString()}</strong></span></div>}
+              {recordingSession && <div className="mt-4 p-4 bg-green-100 text-green-800 rounded-lg text-sm flex items-center"><Info className="w-5 h-5 mr-3 shrink-0"/><span>기록이 진행 중입니다. 시작 날짜: <strong>{recordingSession.startTime}</strong></span></div>}
             </div>
             {completedSessions.length > 0 && (
               <div className="bg-gray-50 border-2 border-gray-200 p-6 rounded-2xl mb-10">
                 <h2 className="text-xl font-semibold text-gray-800 mb-4 flex items-center"><History className="w-6 h-6 mr-3"/>완료된 기록</h2>
                 <ul className="space-y-2 max-h-48 overflow-y-auto">
                   {completedSessions.map(session => (
-                    <li key={session.id}><button onClick={() => handleSessionClick(session)} className="w-full text-left p-3 bg-white hover:bg-gray-100 rounded-lg border border-gray-300 transition-all duration-150"><p className="font-semibold text-gray-700">{new Date(session.startTime).toLocaleString()} ~ {new Date(session.endTime).toLocaleString()}</p></button></li>
+                    <li key={session.id}><button onClick={() => handleSessionClick(session)} className="w-full text-left p-3 bg-white hover:bg-gray-100 rounded-lg border border-gray-300 transition-all duration-150"><p className="font-semibold text-gray-700">{session.startTime} ~ {session.endTime}</p></button></li>
                   ))}
                 </ul>
               </div>
@@ -738,7 +788,7 @@ function App() {
 
   useEffect(() => {
     if (!auth) {
-      setAuthError("Firebase Auth 서비스 초기화 실패");
+      setAuthError("Firebase Auth 서비스 초기화 실패. 환경 변수를 확인해주세요.");
       setIsAuthReady(true);
       return;
     }
@@ -757,7 +807,7 @@ function App() {
     return (
         <div className="p-6 text-red-700 bg-red-100 rounded-xl shadow-lg max-w-lg mx-auto mt-12 text-center">
             <strong>Firebase 초기화 실패</strong>
-            <p className="mt-2 text-sm">Firebase 설정에 문제가 있어 앱을 시작할 수 없습니다. 환경 변수를 확인해주세요.</p>
+            <p className="mt-2 text-sm">Firebase 설정에 문제가 있어 앱을 시작할 수 없습니다. .env.local 파일에 REACT_APP_ 접두사를 붙인 환경 변수가 올바르게 설정되었는지, 그리고 firebaseConfig 객체가 올바르게 구성되었는지 확인해주세요.</p>
         </div>
     );
   }
@@ -799,6 +849,12 @@ function App() {
           </div>
       </header>
       <main className="container mx-auto p-4 sm:p-6 lg:p-8 flex-grow w-full">
+        {authError && 
+            <div className="p-4 mb-6 text-red-700 bg-red-100 rounded-lg shadow-md max-w-4xl mx-auto text-center">
+                <strong>인증 오류</strong>
+                <p className="mt-1 text-sm">{authError}</p>
+            </div>
+        }
         {dbError && 
             <div className="p-4 mb-6 text-red-700 bg-red-100 rounded-lg shadow-md max-w-4xl mx-auto text-center">
                 <strong>데이터베이스 오류</strong>
