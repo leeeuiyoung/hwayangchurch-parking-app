@@ -776,14 +776,6 @@ function QueryPage({ db, userId, setDbError, appId, geminiApiKey }) {
     );
 }
 
-import React, { useState, useEffect } from 'react';
-import { getAuth, onAuthStateChanged, signOut } from 'firebase/auth';
-import { app, db, auth, firebaseConfig, geminiApiKey } from './firebase/firebaseConfig'; // firebaseConfig import 확인
-import LoginPage from './components/LoginPage';
-import EntryForm from './components/EntryForm';
-import QueryPage from './components/QueryPage';
-import { Loader2, FileText, Search, LogOut, Building } from 'lucide-react';
-
 // ==================================================================
 // 최상위 App 컴포넌트
 // ==================================================================
