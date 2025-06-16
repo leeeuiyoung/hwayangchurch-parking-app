@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-// Firebase SDK에서 필요한 함수들을 가져옵니다.
-import { initializeApp, getApps } from 'firebase/app'; // getApps 추가
+import { initializeApp, getApps } from 'firebase/app';
 import { getFirestore, collection, addDoc, getDocs, query, where, serverTimestamp, deleteDoc, doc } from 'firebase/firestore';
 import { getAuth, onAuthStateChanged, signOut, signInWithEmailAndPassword } from 'firebase/auth';
 import { Save, Search, CalendarDays, Users, DollarSign, Clock, Building, Banknote, UserCircle, FileText, Trash2, AlertTriangle, ListChecks, Download, X, Sparkles, Copy, Loader2, PlayCircle, StopCircle, Info, History, LogOut } from 'lucide-react';
@@ -16,6 +15,7 @@ const firebaseConfig = {
     messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID,
     appId: process.env.REACT_APP_FIREBASE_APP_ID
 };
+
 const geminiApiKey = process.env.REACT_APP_GEMINI_API_KEY;
 
 
