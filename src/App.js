@@ -412,6 +412,7 @@ function QueryPage({ db, userId, setDbError, appId, geminiApiKey }) {
     const [completedSessions, setCompletedSessions] = useState([]);
     const [selectedSession, setSelectedSession] = useState(null);
 
+    // [수정된 부분] 검색 로직 변경
     const handleSearch = useCallback(async (searchParams = {}) => {
         if (!userId || !db || !appId) {
             setMessage('데이터베이스 연결이 준비되지 않았습니다.');
@@ -420,67 +421,87 @@ function QueryPage({ db, userId, setDbError, appId, geminiApiKey }) {
 
         const { name = searchName, startDate = searchStartDate, endDate = searchEndDate, location = searchParkingLocation } = searchParams;
 
-        if (!name.trim() && !startDate && !endDate && location === ALL_LOCATIONS_VALUE) {
-            setMessage('검색 조건을 하나 이상 입력하고 검색 버튼을 눌러주세요.');
-            setResults([]);
-            setTotalFee(0);
-            setNameAccountTotals({});
-            return;
-        }
-
         setIsLoading(true);
         setMessage('');
         setDeleteMessage({ type: '', text: '' });
 
         try {
+            // 1. Firestore에서 모든 문서를 가져옵니다. (인덱스 문제 회피)
             const parkingRecordsRef = collection(db, `/artifacts/${appId}/public/data/parkingRecords`);
-            let constraints = [];
-            
-            if (name.trim()) constraints.push(where("name", "==", name.trim()));
-            if (location && location !== ALL_LOCATIONS_VALUE) constraints.push(where("parkingLocation", "==", location));
-            if (startDate) constraints.push(where("parkingDate", ">=", startDate));
-            if (endDate) constraints.push(where("parkingDate", "<=", endDate));
-            
-            const q = query(parkingRecordsRef, ...constraints);
-            const querySnapshot = await getDocs(q);
-            let fetchedRecords = [];
-            querySnapshot.forEach((doc) => fetchedRecords.push({ id: doc.id, ...doc.data() }));
-
-            fetchedRecords = fetchedRecords.filter(record => {
-                const recordDate = record.createdAt?.toDate() || new Date(record.parkingDate);
-                const start = startDate ? new Date(startDate) : null;
-                const end = endDate ? new Date(endDate) : null;
-                if(start) start.setHours(0, 0, 0, 0);
-                if(end) end.setHours(23, 59, 59, 999);
-                if (start && recordDate < start) return false;
-                if (end && recordDate > end) return false;
-                return true;
+            const querySnapshot = await getDocs(parkingRecordsRef);
+            const allRecords = [];
+            querySnapshot.forEach((doc) => {
+                const data = doc.data();
+                if (data.name && data.parkingDate) { // 데이터 유효성 검사
+                   allRecords.push({ id: doc.id, ...data });
+                }
             });
 
-            const sortedDetailedResults = [...fetchedRecords].sort((a, b) => {
+            // 2. Javascript로 조건에 맞는 데이터를 필터링합니다.
+            const filteredRecords = allRecords.filter(record => {
+                // 이름 필터 (포함 여부로 검색)
+                if (name.trim() && !record.name.toLowerCase().includes(name.trim().toLowerCase())) {
+                    return false;
+                }
+                // 주차 장소 필터
+                if (location !== ALL_LOCATIONS_VALUE && record.parkingLocation !== location) {
+                    return false;
+                }
+                // 날짜 범위 필터
+                const recordDate = record.createdAt?.toDate() || new Date(record.parkingDate);
+                if (startDate) {
+                    const start = new Date(startDate);
+                    start.setHours(0, 0, 0, 0);
+                    if (recordDate < start) return false;
+                }
+                if (endDate) {
+                    const end = new Date(endDate);
+                    end.setHours(23, 59, 59, 999);
+                    if (recordDate > end) return false;
+                }
+                
+                return true; // 모든 조건을 통과한 경우에만 true 반환
+            });
+
+            // 3. 필터링된 결과를 정렬합니다.
+            const sortedDetailedResults = [...filteredRecords].sort((a, b) => {
                 const dateA = a.createdAt?.toDate() || new Date(a.parkingDate);
                 const dateB = b.createdAt?.toDate() || new Date(b.parkingDate);
-                return (a.name.localeCompare(b.name, 'ko-KR') || dateB - dateA);
+                const nameCompare = a.name.localeCompare(b.name, 'ko-KR');
+                if (nameCompare !== 0) return nameCompare;
+                return dateB - dateA; // 같은 이름이면 최신 날짜부터
             });
+            
             setResults(sortedDetailedResults);
 
-            const currentNameAccountTotals = sortedDetailedResults.reduce((acc, record) => {
-                const key = `${record.name} | ${record.accountInfo}`;
-                if (!acc[key]) acc[key] = { name: record.name, accountInfo: record.accountInfo, totalFee: 0 };
-                acc[key].totalFee += (record.calculatedFee || 0);
-                return acc;
-            }, {});
-            setNameAccountTotals(currentNameAccountTotals);
+            // 4. 합계 및 통계를 계산합니다.
+            if (sortedDetailedResults.length > 0) {
+                const currentNameAccountTotals = sortedDetailedResults.reduce((acc, record) => {
+                    const key = `${record.name} | ${record.accountInfo}`;
+                    if (!acc[key]) acc[key] = { name: record.name, accountInfo: record.accountInfo, totalFee: 0 };
+                    acc[key].totalFee += (record.calculatedFee || 0);
+                    return acc;
+                }, {});
+                setNameAccountTotals(currentNameAccountTotals);
 
-            setTotalFee(sortedDetailedResults.reduce((sum, record) => sum + (record.calculatedFee || 0), 0));
-            setPeriodTopLocation(getTopParkingLocationsHelper(sortedDetailedResults));
-            if (name.trim()) {
-                setIndividualTopLocation(getTopParkingLocationsHelper(sortedDetailedResults.filter(r => r.name === name.trim())));
+                setTotalFee(sortedDetailedResults.reduce((sum, record) => sum + (record.calculatedFee || 0), 0));
+                setPeriodTopLocation(getTopParkingLocationsHelper(sortedDetailedResults));
+                if (name.trim()) {
+                    setIndividualTopLocation(getTopParkingLocationsHelper(sortedDetailedResults.filter(r => r.name === name.trim())));
+                } else {
+                    setIndividualTopLocation('');
+                }
+                setMessage(''); // 결과가 있으면 메시지 초기화
             } else {
-                setIndividualTopLocation('');
+                // 검색 결과가 없을 때
+                setTotalFee(0);
+                setNameAccountTotals({});
+                if(name || startDate || endDate || location !== ALL_LOCATIONS_VALUE) {
+                    setMessage('검색 결과가 없습니다.');
+                } else {
+                    setMessage('저장된 기록이 없습니다. 조건을 입력하고 검색해주세요.');
+                }
             }
-
-            if (sortedDetailedResults.length === 0) setMessage('검색 결과가 없습니다.');
         } catch (error) {
             console.error("데이터 조회 오류: ", error);
             setMessage(`조회 오류: ${error.message}`);
@@ -551,7 +572,7 @@ function QueryPage({ db, userId, setDbError, appId, geminiApiKey }) {
         setResults([]);
         setTotalFee(0);
         setNameAccountTotals({});
-        setMessage('');
+        setMessage('조회할 조건을 입력하고 검색 버튼을 눌러주세요.');
         setPeriodTopLocation('');
         setIndividualTopLocation('');
         setSelectedSession(null);
@@ -574,7 +595,6 @@ function QueryPage({ db, userId, setDbError, appId, geminiApiKey }) {
     };
 
     const handleDeleteAttempt = (recordId) => {
-        console.log('Deleting item:', recordId);
         setItemToDelete(recordId);
         setShowDeleteModal(true);
         setDeleteMessage({ type: '', text: '' });
@@ -587,19 +607,23 @@ function QueryPage({ db, userId, setDbError, appId, geminiApiKey }) {
             await deleteDoc(doc(db, `/artifacts/${appId}/public/data/parkingRecords`, itemToDelete));
             setDeleteMessage({ type: 'success', text: '항목이 성공적으로 삭제되었습니다.'});
             
-            // 화면의 목록(state)에서 즉시 삭제된 항목을 제거
             const updatedResults = results.filter(r => r.id !== itemToDelete);
             setResults(updatedResults);
 
-            // 합계 재계산
-            const currentNameAccountTotals = updatedResults.reduce((acc, record) => {
-                const key = `${record.name} | ${record.accountInfo}`;
-                if (!acc[key]) acc[key] = { name: record.name, accountInfo: record.accountInfo, totalFee: 0 };
-                acc[key].totalFee += (record.calculatedFee || 0);
-                return acc;
-            }, {});
-            setNameAccountTotals(currentNameAccountTotals);
-            setTotalFee(updatedResults.reduce((sum, record) => sum + (record.calculatedFee || 0), 0));
+            if (updatedResults.length > 0) {
+              const currentNameAccountTotals = updatedResults.reduce((acc, record) => {
+                  const key = `${record.name} | ${record.accountInfo}`;
+                  if (!acc[key]) acc[key] = { name: record.name, accountInfo: record.accountInfo, totalFee: 0 };
+                  acc[key].totalFee += (record.calculatedFee || 0);
+                  return acc;
+              }, {});
+              setNameAccountTotals(currentNameAccountTotals);
+              setTotalFee(updatedResults.reduce((sum, record) => sum + (record.calculatedFee || 0), 0));
+            } else {
+              setTotalFee(0);
+              setNameAccountTotals({});
+              setMessage('남은 검색 결과가 없습니다.');
+            }
 
         } catch (error) {
             console.error("데이터 삭제 오류: ", error);
@@ -795,7 +819,7 @@ function QueryPage({ db, userId, setDbError, appId, geminiApiKey }) {
                 <div className="bg-white rounded-2xl shadow-xl overflow-hidden"><h2 className="text-2xl font-semibold text-slate-800 p-8 sm:p-10 pb-5">상세 주차 기록</h2><div className="overflow-x-auto"><table className="min-w-full"><thead className="bg-slate-100 border-b-2 border-slate-200"><tr><Th>날짜</Th><Th>이름</Th><Th>직분</Th><Th>주차장소</Th><Th>주차시간</Th><Th>시간당요금</Th><Th>계산된요금</Th><Th>계좌정보</Th><Th className="text-right pr-8">작업</Th></tr></thead><tbody className="bg-white divide-y divide-slate-200">{results.map(record => (<tr key={record.id} className="hover:bg-slate-50/70 transition-colors duration-150"><Td>{record.parkingDate}</Td><Td>{record.name}</Td><Td>{record.position}</Td><Td>{record.parkingLocation}</Td><Td>{record.parkingDurationHours}시간 {record.isCustomDuration ? `(${record.customDurationDetail})` : ''}</Td><Td>{formatCurrency(record.hourlyRate)}</Td><Td className="font-semibold text-blue-600">{formatCurrency(record.calculatedFee)}</Td><Td>{record.accountInfo}</Td><Td className="text-right pr-6"><button onClick={() => handleDeleteAttempt(record.id)} className="text-red-600 hover:text-red-700 p-2.5 rounded-lg hover:bg-red-100 transition-colors" title="삭제"><Trash2 size={20} /></button></Td></tr>))}</tbody></table></div></div>
               </>
             )}
-            {results.length === 0 && !isLoading && !message && <div className="bg-white p-12 rounded-2xl shadow-xl text-center"><p className="text-slate-500 text-xl">조회할 조건을 입력하고 검색 버튼을 눌러주세요.</p></div>}
+            {results.length === 0 && !isLoading && message && <div className="bg-white p-12 rounded-2xl shadow-xl text-center"><p className="text-slate-500 text-xl">{message}</p></div>}
             
             {showDeleteModal && (<div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-[100]"><div className="bg-white p-8 sm:p-10 rounded-2xl shadow-2xl max-w-lg w-full"><div className="flex items-start mb-7"><div className="p-3.5 bg-red-100 rounded-full mr-6 shrink-0"><AlertTriangle className="text-red-500 w-9 h-9" /></div><div><h3 className="text-2xl font-semibold text-slate-800">항목 삭제 확인</h3><p className="text-slate-600 mt-2.5 text-base">정말로 이 항목을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.</p></div></div>{deleteMessage.text && <div className={`p-4 rounded-xl mb-7 text-sm ${deleteMessage.type === 'success' ? 'bg-green-50 text-green-700 border border-green-300' : 'bg-red-50 text-red-700 border border-red-300'}`}>{deleteMessage.text}</div>}<div className="flex justify-end space-x-4"><button onClick={() => { setShowDeleteModal(false); setItemToDelete(null); }} disabled={isLoading} className="px-7 py-3.5 text-base font-medium text-slate-700 bg-slate-200 hover:bg-slate-300 rounded-xl transition-colors disabled:opacity-70 focus:outline-none focus:ring-4 focus:ring-offset-2 focus:ring-slate-300">취소</button><button onClick={confirmDelete} disabled={isLoading} className="px-7 py-3.5 text-base font-medium text-white bg-red-600 hover:bg-red-700 rounded-xl transition-colors flex items-center disabled:opacity-70 focus:outline-none focus:ring-4 focus:ring-offset-2 focus:ring-red-300">{isLoading ? <Loader2 className="animate-spin -ml-1 mr-2.5 h-5 w-5 text-white" /> : <Trash2 size={18} className="mr-2.5" />}{isLoading ? '삭제 중...' : '삭제'}</button></div></div></div>)}
             {showAiSummaryModal && (<div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-[100]"><div className="bg-white p-8 sm:p-10 rounded-2xl shadow-2xl max-w-2xl w-full flex flex-col" style={{maxHeight: '90vh'}}><div className="flex justify-between items-center mb-6"><h3 className="text-2xl font-semibold text-slate-800 flex items-center"><Sparkles className="w-7 h-7 mr-3 text-purple-600" /> AI 주차 데이터 분석 결과</h3><button onClick={() => setShowAiSummaryModal(false)} className="text-slate-500 hover:text-slate-700 p-2 rounded-full hover:bg-slate-100 transition-colors"><X size={24} /></button></div>{isAiLoading && (<div className="flex flex-col items-center justify-center py-10"><Loader2 className="animate-spin h-12 w-12 text-purple-600 mb-6" /><p className="text-slate-600 text-lg">AI가 데이터를 분석하고 있습니다...</p></div>)}{aiError && !isAiLoading && (<div className="p-5 bg-red-50 border border-red-300 rounded-xl text-red-700 mb-6"><p className="font-semibold">오류 발생</p><p className="text-sm mt-1">{aiError}</p></div>)}{!isAiLoading && aiSummary && (<div className="prose prose-sm sm:prose-base max-w-none overflow-y-auto flex-grow mb-6 pr-2 whitespace-pre-wrap">{aiSummary}</div>)}<div className="flex flex-col sm:flex-row justify-end space-y-3 sm:space-y-0 sm:space-x-4 pt-6 border-t border-slate-200">{!isAiLoading && aiSummary && (<button onClick={() => copyToClipboard(aiSummary)} className="px-6 py-3 text-base font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors flex items-center justify-center focus:outline-none focus:ring-4 focus:ring-offset-2 focus:ring-blue-300"><Copy size={18} className="mr-2.5" />{copied ? '복사 완료!' : '요약 복사하기'}</button>)}<button onClick={() => setShowAiSummaryModal(false)} className="px-6 py-3 text-base font-medium text-slate-700 bg-slate-200 hover:bg-slate-300 rounded-xl transition-colors focus:outline-none focus:ring-4 focus:ring-offset-2 focus:ring-slate-300">닫기</button></div></div></div>)}
