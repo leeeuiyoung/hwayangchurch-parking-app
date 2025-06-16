@@ -410,8 +410,6 @@ function QueryPage({ db, userId, setDbError, appId, geminiApiKey }) {
     const [individualTopLocation, setIndividualTopLocation] = useState('');
     const [recordingSession, setRecordingSession] = useState(null);
     const [completedSessions, setCompletedSessions] = useState([]);
-    
-    // [수정] selectedSession state 추가: 클릭된 세션을 명확히 추적
     const [selectedSession, setSelectedSession] = useState(null);
 
     const handleSearch = useCallback(async (searchParams = {}) => {
@@ -419,77 +417,67 @@ function QueryPage({ db, userId, setDbError, appId, geminiApiKey }) {
             setMessage('데이터베이스 연결이 준비되지 않았습니다.');
             return;
         }
+
+        const { name = searchName, startDate = searchStartDate, endDate = searchEndDate, location = searchParkingLocation } = searchParams;
+
+        // [수정] 검색 조건이 하나도 없을 경우 검색을 실행하지 않음
+        if (!name.trim() && !startDate && !endDate && location === ALL_LOCATIONS_VALUE) {
+            setMessage('검색 조건을 하나 이상 입력하고 검색 버튼을 눌러주세요.');
+            setResults([]);
+            setTotalFee(0);
+            setNameAccountTotals({});
+            return;
+        }
+
         setIsLoading(true);
         setMessage('');
         setDeleteMessage({ type: '', text: '' });
-
-        // searchParams가 있으면 그 값을 우선 사용, 없으면 state의 값을 사용
-        const { name = searchName, startDate = searchStartDate, endDate = searchEndDate, location = searchParkingLocation } = searchParams;
 
         try {
             const parkingRecordsRef = collection(db, `/artifacts/${appId}/public/data/parkingRecords`);
             let constraints = [];
             
-            if (name.trim()) {
-                constraints.push(where("name", "==", name.trim()));
-            }
-            if (location && location !== ALL_LOCATIONS_VALUE) {
-                constraints.push(where("parkingLocation", "==", location));
-            }
-             // Firestore 쿼리에서는 parkingDate를 사용하고, JS 필터링에서 createdAt을 추가로 고려
-            if (startDate) {
-                constraints.push(where("parkingDate", ">=", startDate));
-            }
-            if (endDate) {
-                constraints.push(where("parkingDate", "<=", endDate));
-            }
+            if (name.trim()) constraints.push(where("name", "==", name.trim()));
+            if (location && location !== ALL_LOCATIONS_VALUE) constraints.push(where("parkingLocation", "==", location));
+            if (startDate) constraints.push(where("parkingDate", ">=", startDate));
+            if (endDate) constraints.push(where("parkingDate", "<=", endDate));
             
             const q = query(parkingRecordsRef, ...constraints);
             const querySnapshot = await getDocs(q);
-            const fetchedRecords = [];
+            let fetchedRecords = [];
             querySnapshot.forEach((doc) => fetchedRecords.push({ id: doc.id, ...doc.data() }));
-            
-            // JS에서 날짜 필터링 (createdAt이 있는 최신 데이터 대응)
-             const filteredRecords = fetchedRecords.filter(record => {
-                // Firestore에서 이미 parkingDate로 1차 필터링되었으므로, 추가 필터링은 필요 없을 수 있음.
-                // 만약 createdAt 기준으로 더 정밀하게 필터링해야 한다면 아래 로직 사용
-                 const recordDate = record.createdAt?.toDate() || new Date(record.parkingDate);
-                 const start = startDate ? new Date(startDate) : null;
-                 const end = endDate ? new Date(endDate) : null;
-                 if(start) start.setHours(0, 0, 0, 0);
-                 if(end) end.setHours(23, 59, 59, 999);
 
-                 if (start && recordDate < start) return false;
-                 if (end && recordDate > end) return false;
-                 return true;
-             });
+            // JS에서 날짜 추가 필터링 (기존 데이터 호환)
+            fetchedRecords = fetchedRecords.filter(record => {
+                const recordDate = record.createdAt?.toDate() || new Date(record.parkingDate);
+                const start = startDate ? new Date(startDate) : null;
+                const end = endDate ? new Date(endDate) : null;
+                if(start) start.setHours(0, 0, 0, 0);
+                if(end) end.setHours(23, 59, 59, 999);
+                if (start && recordDate < start) return false;
+                if (end && recordDate > end) return false;
+                return true;
+            });
 
-            const sortedDetailedResults = [...filteredRecords].sort((a, b) => {
+            const sortedDetailedResults = [...fetchedRecords].sort((a, b) => {
                 const dateA = a.createdAt?.toDate() || new Date(a.parkingDate);
                 const dateB = b.createdAt?.toDate() || new Date(b.parkingDate);
-                const nameCompare = a.name.localeCompare(b.name, 'ko-KR');
-                if (nameCompare !== 0) return nameCompare;
-                return dateB - dateA;
+                return (b.name.localeCompare(a.name, 'ko-KR') || dateB - dateA) * -1;
             });
             setResults(sortedDetailedResults);
 
             const currentNameAccountTotals = sortedDetailedResults.reduce((acc, record) => {
                 const key = `${record.name} | ${record.accountInfo}`;
-                if (!acc[key]) {
-                    acc[key] = { name: record.name, accountInfo: record.accountInfo, totalFee: 0 };
-                }
+                if (!acc[key]) acc[key] = { name: record.name, accountInfo: record.accountInfo, totalFee: 0 };
                 acc[key].totalFee += (record.calculatedFee || 0);
                 return acc;
             }, {});
             setNameAccountTotals(currentNameAccountTotals);
 
-            let currentTotalFee = sortedDetailedResults.reduce((sum, record) => sum + (record.calculatedFee || 0), 0);
-            setTotalFee(currentTotalFee);
-            
+            setTotalFee(sortedDetailedResults.reduce((sum, record) => sum + (record.calculatedFee || 0), 0));
             setPeriodTopLocation(getTopParkingLocationsHelper(sortedDetailedResults));
             if (name.trim()) {
-                const userSpecificRecords = sortedDetailedResults.filter(r => r.name === name.trim());
-                setIndividualTopLocation(getTopParkingLocationsHelper(userSpecificRecords));
+                setIndividualTopLocation(getTopParkingLocationsHelper(sortedDetailedResults.filter(r => r.name === name.trim())));
             } else {
                 setIndividualTopLocation('');
             }
@@ -533,43 +521,30 @@ function QueryPage({ db, userId, setDbError, appId, geminiApiKey }) {
             localStorage.removeItem('parkingRecordingSession');
             setRecordingSession(null);
             
-            const start = newCompletedSession.startTime;
-            const end = newCompletedSession.endTime;
-            setSearchStartDate(start);
-            setSearchEndDate(end);
+            setSearchStartDate(newCompletedSession.startTime);
+            setSearchEndDate(newCompletedSession.endTime);
             setMessage(`기록이 중단되었습니다. 기간이 자동으로 설정되었습니다.`);
             
-            handleSearch({startDate: start, endDate: end});
+            handleSearch({startDate: newCompletedSession.startTime, endDate: newCompletedSession.endTime, name: '', location: ALL_LOCATIONS_VALUE});
         }
     };
     
-    // [수정] 완료된 기록 클릭 핸들러
     const handleSessionClick = (session) => {
-        const start = session.startTime;
-        const end = session.endTime;
-
-        // 검색 필드를 세션 기간으로 업데이트
-        setSearchStartDate(start);
-        setSearchEndDate(end);
-        
-        // 다른 필터는 초기화하여 해당 세션의 전체 기록을 볼 수 있도록 함
+        setSearchStartDate(session.startTime);
+        setSearchEndDate(session.endTime);
         setSearchName('');
         setSearchParkingLocation(ALL_LOCATIONS_VALUE);
         setSelectedSession(session.id);
-
-        // 업데이트된 기간으로 즉시 검색 실행
-        handleSearch({ startDate: start, endDate: end, name: '', location: ALL_LOCATIONS_VALUE });
+        handleSearch({ startDate: session.startTime, endDate: session.endTime, name: '', location: ALL_LOCATIONS_VALUE });
     };
 
-    // [신규] 완료된 기록 삭제 핸들러
     const handleDeleteSession = (sessionIdToDelete, e) => {
-        e.stopPropagation(); // 부모 요소(li)의 클릭 이벤트 방지
+        e.stopPropagation();
         const updatedSessions = completedSessions.filter(session => session.id !== sessionIdToDelete);
         setCompletedSessions(updatedSessions);
         localStorage.setItem('completedParkingSessions', JSON.stringify(updatedSessions));
     };
 
-    // [신규] 전체 초기화 핸들러
     const handleResetSearch = () => {
         setSearchName('');
         setSearchStartDate('');
@@ -596,21 +571,52 @@ function QueryPage({ db, userId, setDbError, appId, geminiApiKey }) {
         return Object.entries(locationCounts).sort(([, a], [, b]) => b - a).slice(0, count).map(([location, num]) => `${location} (${num}건)`).join(', ');
     };
 
-    const getTopParkersByFee = (totals, count = 3) => {
-        return Object.values(totals).sort((a, b) => b.totalFee - a.totalFee).slice(0, count).map(item => `${item.name} (${formatCurrency(item.totalFee)})`).join(', ');
+    // [수정] 상세 기록 삭제 버튼 클릭 시 실행될 함수
+    const handleDeleteAttempt = (recordId) => {
+        // 이 로그가 콘솔에 찍히는지 확인해주세요!
+        console.log('Deleting item:', recordId);
+        setItemToDelete(recordId);
+        setShowDeleteModal(true);
+        setDeleteMessage({ type: '', text: '' });
     };
 
-    const handleAiAnalysis = async () => { /* ... 기존 코드와 동일 ... */ };
-    const copyToClipboard = (text) => { /* ... 기존 코드와 동일 ... */ };
-    const escapeCsvCell = (cellData) => { /* ... 기존 코드와 동일 ... */ };
-    const downloadExcel = () => { /* ... 기존 코드와 동일 ... */ };
-    const handleDeleteAttempt = (recordId) => { /* ... 기존 코드와 동일 ... */ };
-    const confirmDelete = async () => { /* ... 기존 코드와 동일 ... */ };
+    // [수정] 상세 기록 삭제 최종 확인 함수
+    const confirmDelete = async () => {
+        if (!itemToDelete || !db || !appId) return;
+        setIsLoading(true);
+        try {
+            // Firestore에서 문서 삭제
+            await deleteDoc(doc(db, `/artifacts/${appId}/public/data/parkingRecords`, itemToDelete));
+            
+            setDeleteMessage({ type: 'success', text: '항목이 성공적으로 삭제되었습니다.'});
+            
+            // 삭제 후 현재 검색 조건으로 다시 검색하여 목록 갱신
+            await handleSearch({startDate: searchStartDate, endDate: searchEndDate, name: searchName, location: searchParkingLocation});
+            
+            // [추가] 캐시 문제로 삭제한 항목이 보여도 화면에서 확실히 제거
+            setResults(prevResults => prevResults.filter(r => r.id !== itemToDelete));
+
+        } catch (error) {
+            console.error("데이터 삭제 오류: ", error);
+            setDeleteMessage({ type: 'error', text: `삭제 오류: ${error.message}` });
+            setDbError(`삭제 오류: ${error.message}`);
+        } finally {
+            setShowDeleteModal(false);
+            setIsLoading(false);
+            setItemToDelete(null);
+        }
+    };
+    
+    // AI 분석, 엑셀 다운로드 등 나머지 함수들은 기존과 동일합니다.
+    const handleAiAnalysis = async () => { /* ... 기존 코드 ... */ };
+    const copyToClipboard = (text) => { /* ... 기존 코드 ... */ };
+    const escapeCsvCell = (cellData) => { /* ... 기존 코드 ... */ };
+    const downloadExcel = () => { /* ... 기존 코드 ... */ };
     
     return (
         <div className="space-y-12">
             <div className="bg-white p-8 sm:p-12 rounded-3xl shadow-2xl">
-                <h1 className="text-4xl font-bold text-slate-800 mb-6 text-center">주차 정보 조회</h1>
+                 <h1 className="text-4xl font-bold text-slate-800 mb-6 text-center">주차 정보 조회</h1>
                 <div className="bg-sky-50 border-2 border-sky-200 p-6 rounded-2xl mb-10">
                     <h2 className="text-xl font-semibold text-sky-800 mb-4 flex items-center"><Clock className="w-6 h-6 mr-3"/>기록 세션 관리</h2>
                     <div className="flex flex-col sm:flex-row gap-4">
@@ -620,7 +626,6 @@ function QueryPage({ db, userId, setDbError, appId, geminiApiKey }) {
                     {recordingSession && <div className="mt-4 p-4 bg-green-100 text-green-800 rounded-lg text-sm flex items-center"><Info className="w-5 h-5 mr-3 shrink-0"/><span>기록이 진행 중입니다. 시작 날짜: <strong>{recordingSession.startTime}</strong></span></div>}
                 </div>
 
-                {/* [수정] 완료된 기록 UI */}
                 {completedSessions.length > 0 && (
                     <div className="bg-gray-50 border-2 border-gray-200 p-6 rounded-2xl mb-10">
                         <h2 className="text-xl font-semibold text-gray-800 mb-4 flex items-center"><History className="w-6 h-6 mr-3"/>완료된 기록</h2>
@@ -645,7 +650,6 @@ function QueryPage({ db, userId, setDbError, appId, geminiApiKey }) {
                     <div><label htmlFor="searchEndDate" className="block text-lg font-semibold text-slate-700 mb-2.5">종료 날짜</label><input type="date" id="searchEndDate" value={searchEndDate} onChange={(e) => setSearchEndDate(e.target.value)} className={formInputOneUI}/></div>
                 </div>
 
-                {/* [수정] 버튼 그룹에 초기화 버튼 추가 */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
                     <button onClick={() => handleSearch()} disabled={isLoading} className="sm:col-span-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-4 px-6 rounded-xl shadow-lg transition-all duration-150 ease-in-out flex items-center justify-center disabled:opacity-70 focus:outline-none focus:ring-4 focus:ring-offset-2 focus:ring-blue-300 text-lg">{isLoading && !isAiLoading ? <Loader2 className="animate-spin -ml-1 mr-3 h-6 w-6 text-white" /> : <Search className="w-6 h-6 mr-3" />}{isLoading && !isAiLoading ? '검색 중...' : '검색하기'}</button>
                     <button onClick={downloadExcel} disabled={results.length === 0 || isLoading} className="sm:col-span-1 bg-green-600 hover:bg-green-700 text-white font-semibold py-4 px-6 rounded-xl shadow-lg transition-all duration-150 ease-in-out flex items-center justify-center disabled:opacity-70 focus:outline-none focus:ring-4 focus:ring-offset-2 focus:ring-green-300 text-lg"><Download className="w-6 h-6 mr-3" />엑셀 다운로드</button>
@@ -656,16 +660,22 @@ function QueryPage({ db, userId, setDbError, appId, geminiApiKey }) {
                 {message && <p className="text-center text-slate-600 mt-10 text-base">{message}</p>}
                 {deleteMessage.text && !showDeleteModal && <div className={`p-4 rounded-xl mt-10 text-sm ${deleteMessage.type === 'success' ? 'bg-green-50 text-green-700 border border-green-300' : 'bg-red-50 text-red-700 border border-red-300'}`}>{deleteMessage.text}</div>}
             </div>
-
-            {/* --- 결과 표시 섹션 (기존과 동일) --- */}
-            {results.length > 0 && <div className="bg-white p-8 sm:p-10 rounded-2xl shadow-xl mb-10"><h2 className="text-2xl font-semibold text-slate-800 mb-5">선택 기간 총 주차비용</h2><p className="text-4xl font-bold text-blue-600">{formatCurrency(totalFee)}</p></div>}
-            {Object.keys(nameAccountTotals).length > 0 && <div className="bg-white p-8 sm:p-10 rounded-2xl shadow-xl mb-10"><h2 className="text-2xl font-semibold text-slate-800 mb-8 flex items-center"><ListChecks size={30} className="mr-4 text-blue-600" />이름 및 계좌별 합계</h2><ul className="space-y-5">{Object.values(nameAccountTotals).sort((a, b) => a.name.localeCompare(b.name, 'ko-KR') || a.accountInfo.localeCompare(b.accountInfo)).map((data, i) => (<li key={i} className="p-6 border border-slate-200 rounded-xl hover:shadow-lg transition-shadow duration-200 bg-slate-50"><div className="flex flex-col sm:flex-row justify-between items-start sm:items-center"><div className="mb-2 sm:mb-0 flex-grow"><p className="text-xl font-semibold text-slate-800">{data.name}</p><p className="text-sm text-slate-500 mt-1.5">{data.accountInfo}</p></div><p className="text-2xl font-bold text-blue-600 sm:text-right whitespace-nowrap mt-2 sm:mt-0">{formatCurrency(data.totalFee)}</p></div></li>))}</ul></div>}
-            {results.length > 0 && <div className="bg-white rounded-2xl shadow-xl overflow-hidden"><h2 className="text-2xl font-semibold text-slate-800 p-8 sm:p-10 pb-5">상세 주차 기록</h2><div className="overflow-x-auto"><table className="min-w-full"><thead className="bg-slate-100 border-b-2 border-slate-200"><tr><Th>날짜</Th><Th>이름</Th><Th>직분</Th><Th>주차장소</Th><Th>주차시간</Th><Th>시간당요금</Th><Th>계산된요금</Th><Th>계좌정보</Th><Th className="text-right pr-8">작업</Th></tr></thead><tbody className="bg-white divide-y divide-slate-200">{results.map(record => (<tr key={record.id} className="hover:bg-slate-50/70 transition-colors duration-150"><Td>{record.parkingDate}</Td><Td>{record.name}</Td><Td>{record.position}</Td><Td>{record.parkingLocation}</Td><Td>{record.parkingDurationHours}시간 {record.isCustomDuration ? `(${record.customDurationDetail})` : ''}</Td><Td>{formatCurrency(record.hourlyRate)}</Td><Td className="font-semibold text-blue-600">{formatCurrency(record.calculatedFee)}</Td><Td>{record.accountInfo}</Td><Td className="text-right pr-6"><button onClick={() => handleDeleteAttempt(record.id)} className="text-red-600 hover:text-red-700 p-2.5 rounded-lg hover:bg-red-100 transition-colors" title="삭제"><Trash2 size={20} /></button></Td></tr>))}</tbody></table></div></div>}
-            {results.length === 0 && !isLoading && !message && <div className="bg-white p-12 rounded-2xl shadow-xl text-center"><p className="text-slate-500 text-xl">조회할 조건을 입력하고 검색 버튼을 눌러주세요.</p></div>}
             
-            {/* --- 모달 (기존과 동일) --- */}
-            {showDeleteModal && ( <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-[100]"><div className="bg-white p-8 sm:p-10 rounded-2xl shadow-2xl max-w-lg w-full"><div className="flex items-start mb-7"><div className="p-3.5 bg-red-100 rounded-full mr-6 shrink-0"><AlertTriangle className="text-red-500 w-9 h-9" /></div><div><h3 className="text-2xl font-semibold text-slate-800">항목 삭제 확인</h3><p className="text-slate-600 mt-2.5 text-base">정말로 이 항목을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.</p></div></div>{deleteMessage.text && <div className={`p-4 rounded-xl mb-7 text-sm ${deleteMessage.type === 'success' ? 'bg-green-50 text-green-700 border border-green-300' : 'bg-red-50 text-red-700 border border-red-300'}`}>{deleteMessage.text}</div>}<div className="flex justify-end space-x-4"><button onClick={() => { setShowDeleteModal(false); setItemToDelete(null); }} disabled={isLoading && itemToDelete !== null} className="px-7 py-3.5 text-base font-medium text-slate-700 bg-slate-200 hover:bg-slate-300 rounded-xl transition-colors disabled:opacity-70 focus:outline-none focus:ring-4 focus:ring-offset-2 focus:ring-slate-300">취소</button><button onClick={confirmDelete} disabled={isLoading && itemToDelete !== null} className="px-7 py-3.5 text-base font-medium text-white bg-red-600 hover:bg-red-700 rounded-xl transition-colors flex items-center disabled:opacity-70 focus:outline-none focus:ring-4 focus:ring-offset-2 focus:ring-red-300">{isLoading && itemToDelete !== null ? <Loader2 className="animate-spin -ml-1 mr-2.5 h-5 w-5 text-white" /> : <Trash2 size={18} className="mr-2.5" />}{isLoading && itemToDelete !== null ? '삭제 중...' : '삭제'}</button></div></div></div>)}
-            {showAiSummaryModal && (<div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-[100]"><div className="bg-white p-8 sm:p-10 rounded-2xl shadow-2xl max-w-2xl w-full flex flex-col" style={{maxHeight: '90vh'}}><div className="flex justify-between items-center mb-6"><h3 className="text-2xl font-semibold text-slate-800 flex items-center"><Sparkles className="w-7 h-7 mr-3 text-purple-600" /> AI 주차 데이터 분석 결과</h3><button onClick={() => setShowAiSummaryModal(false)} className="text-slate-500 hover:text-slate-700 p-2 rounded-full hover:bg-slate-100 transition-colors"><X size={24} /></button></div>{isAiLoading && (<div className="flex flex-col items-center justify-center py-10"><Loader2 className="animate-spin h-12 w-12 text-purple-600 mb-6" /><p className="text-slate-600 text-lg">AI가 데이터를 분석하고 있습니다...</p></div>)}{aiError && !isAiLoading && (<div className="p-5 bg-red-50 border border-red-300 rounded-xl text-red-700 mb-6"><p className="font-semibold">오류 발생</p><p className="text-sm mt-1">{aiError}</p></div>)}{!isAiLoading && aiSummary && (<div className="prose prose-sm sm:prose-base max-w-none overflow-y-auto flex-grow mb-6 pr-2 whitespace-pre-wrap">{aiSummary}</div>)}<div className="flex flex-col sm:flex-row justify-end space-y-3 sm:space-y-0 sm:space-x-4 pt-6 border-t border-slate-200">{!isAiLoading && aiSummary && (<button onClick={() => copyToClipboard(aiSummary)} className="px-6 py-3 text-base font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors flex items-center justify-center focus:outline-none focus:ring-4 focus:ring-offset-2 focus:ring-blue-300"><Copy size={18} className="mr-2.5" />{copied ? '복사 완료!' : '요약 복사하기'}</button>)}<button onClick={() => setShowAiSummaryModal(false)} className="px-6 py-3 text-base font-medium text-slate-700 bg-slate-200 hover:bg-slate-300 rounded-xl transition-colors focus:outline-none focus:ring-4 focus:ring-offset-2 focus:ring-slate-300">닫기</button></div></div></div>)}
+            {/* 결과 표시 섹션 */}
+            {results.length > 0 && (
+              <>
+                <div className="bg-white p-8 sm:p-10 rounded-2xl shadow-xl mb-10"><h2 className="text-2xl font-semibold text-slate-800 mb-5">선택 기간 총 주차비용</h2><p className="text-4xl font-bold text-blue-600">{formatCurrency(totalFee)}</p></div>
+                {Object.keys(nameAccountTotals).length > 0 && <div className="bg-white p-8 sm:p-10 rounded-2xl shadow-xl mb-10"><h2 className="text-2xl font-semibold text-slate-800 mb-8 flex items-center"><ListChecks size={30} className="mr-4 text-blue-600" />이름 및 계좌별 합계</h2><ul className="space-y-5">{Object.values(nameAccountTotals).sort((a, b) => a.name.localeCompare(b.name, 'ko-KR') || a.accountInfo.localeCompare(b.accountInfo)).map((data, i) => (<li key={i} className="p-6 border border-slate-200 rounded-xl hover:shadow-lg transition-shadow duration-200 bg-slate-50"><div className="flex flex-col sm:flex-row justify-between items-start sm:items-center"><div className="mb-2 sm:mb-0 flex-grow"><p className="text-xl font-semibold text-slate-800">{data.name}</p><p className="text-sm text-slate-500 mt-1.5">{data.accountInfo}</p></div><p className="text-2xl font-bold text-blue-600 sm:text-right whitespace-nowrap mt-2 sm:mt-0">{formatCurrency(data.totalFee)}</p></div></li>))}</ul></div>}
+                <div className="bg-white rounded-2xl shadow-xl overflow-hidden"><h2 className="text-2xl font-semibold text-slate-800 p-8 sm:p-10 pb-5">상세 주차 기록</h2><div className="overflow-x-auto"><table className="min-w-full"><thead className="bg-slate-100 border-b-2 border-slate-200"><tr><Th>날짜</Th><Th>이름</Th><Th>직분</Th><Th>주차장소</Th><Th>주차시간</Th><Th>시간당요금</Th><Th>계산된요금</Th><Th>계좌정보</Th><Th className="text-right pr-8">작업</Th></tr></thead><tbody className="bg-white divide-y divide-slate-200">{results.map(record => (<tr key={record.id} className="hover:bg-slate-50/70 transition-colors duration-150"><Td>{record.parkingDate}</Td><Td>{record.name}</Td><Td>{record.position}</Td><Td>{record.parkingLocation}</Td><Td>{record.parkingDurationHours}시간 {record.isCustomDuration ? `(${record.customDurationDetail})` : ''}</Td><Td>{formatCurrency(record.hourlyRate)}</Td><Td className="font-semibold text-blue-600">{formatCurrency(record.calculatedFee)}</Td><Td>{record.accountInfo}</Td><Td className="text-right pr-6"><button onClick={() => handleDeleteAttempt(record.id)} className="text-red-600 hover:text-red-700 p-2.5 rounded-lg hover:bg-red-100 transition-colors" title="삭제"><Trash2 size={20} /></button></Td></tr>))}</tbody></table></div></div>
+              </>
+            )}
+            {results.length === 0 && !isLoading && message && <div className="bg-white p-12 rounded-2xl shadow-xl text-center"><p className="text-slate-500 text-xl">{message}</p></div>}
+            
+            {/* 모달창 */}
+            {showDeleteModal && (<div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-[100]"><div className="bg-white p-8 sm:p-10 rounded-2xl shadow-2xl max-w-lg w-full"><div className="flex items-start mb-7"><div className="p-3.5 bg-red-100 rounded-full mr-6 shrink-0"><AlertTriangle className="text-red-500 w-9 h-9" /></div><div><h3 className="text-2xl font-semibold text-slate-800">항목 삭제 확인</h3><p className="text-slate-600 mt-2.5 text-base">정말로 이 항목을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.</p></div></div>{deleteMessage.text && <div className={`p-4 rounded-xl mb-7 text-sm ${deleteMessage.type === 'success' ? 'bg-green-50 text-green-700 border border-green-300' : 'bg-red-50 text-red-700 border border-red-300'}`}>{deleteMessage.text}</div>}<div className="flex justify-end space-x-4"><button onClick={() => { setShowDeleteModal(false); setItemToDelete(null); }} disabled={isLoading} className="px-7 py-3.5 text-base font-medium text-slate-700 bg-slate-200 hover:bg-slate-300 rounded-xl transition-colors disabled:opacity-70 focus:outline-none focus:ring-4 focus:ring-offset-2 focus:ring-slate-300">취소</button><button onClick={confirmDelete} disabled={isLoading} className="px-7 py-3.5 text-base font-medium text-white bg-red-600 hover:bg-red-700 rounded-xl transition-colors flex items-center disabled:opacity-70 focus:outline-none focus:ring-4 focus:ring-offset-2 focus:ring-red-300">{isLoading ? <Loader2 className="animate-spin -ml-1 mr-2.5 h-5 w-5 text-white" /> : <Trash2 size={18} className="mr-2.5" />}{isLoading ? '삭제 중...' : '삭제'}</button></div></div></div>)}
+            {showAiSummaryModal && (
+                // AI Summary Modal JSX
+            )}
         </div>
     );
 }
