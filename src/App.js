@@ -776,6 +776,14 @@ function QueryPage({ db, userId, setDbError, appId, geminiApiKey }) {
     );
 }
 
+import React, { useState, useEffect } from 'react';
+import { getAuth, onAuthStateChanged, signOut } from 'firebase/auth';
+import { app, db, auth, firebaseConfig, geminiApiKey } from './firebase/firebaseConfig'; // firebaseConfig import 확인
+import LoginPage from './components/LoginPage';
+import EntryForm from './components/EntryForm';
+import QueryPage from './components/QueryPage';
+import { Loader2, FileText, Search, LogOut, Building } from 'lucide-react';
+
 // ==================================================================
 // 최상위 App 컴포넌트
 // ==================================================================
@@ -798,24 +806,34 @@ function App() {
     });
     return () => unsubscribe();
   }, []);
-  
+
+  // 로그아웃(초기화)을 처리하는 통합된 함수입니다.
   const handleLogout = () => {
-    signOut(auth);
+    signOut(auth).then(() => {
+      // 로그아웃에 성공하면, 콘솔에 메시지를 표시하고 페이지를 새로고침하여
+      // 로그인 페이지가 나타나도록 합니다.
+      console.log("로그아웃 성공! 로그인 페이지로 돌아갑니다.");
+      window.location.reload(); // 페이지를 새로고침하여 상태를 초기화하고 로그인 페이지로 리디렉션
+    }).catch((error) => {
+      // 로그아웃에 실패하면, 콘솔에 오류 메시지를 표시합니다.
+      console.error("로그아웃 중 오류 발생:", error);
+      setAuthError("로그아웃에 실패했습니다. 다시 시도해주세요.");
+    });
   };
-  
+
   if (!app || !db || !auth) {
     return (
-        <div className="p-6 text-red-700 bg-red-100 rounded-xl shadow-lg max-w-lg mx-auto mt-12 text-center">
-            <strong>Firebase 초기화 실패</strong>
-            <p className="mt-2 text-sm">Firebase 설정에 문제가 있어 앱을 시작할 수 없습니다. .env.local 파일에 REACT_APP_ 접두사를 붙인 환경 변수가 올바르게 설정되었는지, 그리고 firebaseConfig 객체가 올바르게 구성되었는지 확인해주세요.</p>
-        </div>
+      <div className="p-6 text-red-700 bg-red-100 rounded-xl shadow-lg max-w-lg mx-auto mt-12 text-center">
+        <strong>Firebase 초기화 실패</strong>
+        <p className="mt-2 text-sm">Firebase 설정에 문제가 있어 앱을 시작할 수 없습니다. .env.local 파일에 REACT_APP_ 접두사를 붙인 환경 변수가 올바르게 설정되었는지, 그리고 firebaseConfig 객체가 올바르게 구성되었는지 확인해주세요.</p>
+      </div>
     );
   }
 
   if (!isAuthReady) {
     return (
       <div className="flex justify-center items-center min-h-screen">
-          <Loader2 className="animate-spin h-12 w-12 text-blue-500" />
+        <Loader2 className="animate-spin h-12 w-12 text-blue-500" />
       </div>
     );
   }
@@ -823,68 +841,45 @@ function App() {
   if (!userId) {
     return <LoginPage authInstance={auth} />;
   }
-  
+
   const navigationButtons = (
     <nav className="flex items-center space-x-2">
-        <button onClick={() => setCurrentPage('entry')} className={`flex items-center justify-center px-5 py-3 rounded-lg text-sm font-semibold transition-all duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 ${currentPage === 'entry' ? 'bg-blue-600 text-white shadow-md hover:bg-blue-700 focus:ring-blue-400' : 'bg-slate-200 text-slate-700 hover:bg-slate-300 focus:ring-slate-400'}`}>
-            <FileText className="w-4 h-4 mr-2" />입력
-        </button>
-        <button onClick={() => setCurrentPage('query')} className={`flex items-center justify-center px-5 py-3 rounded-lg text-sm font-semibold transition-all duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 ${currentPage === 'query' ? 'bg-blue-600 text-white shadow-md hover:bg-blue-700 focus:ring-blue-400' : 'bg-slate-200 text-slate-700 hover:bg-slate-300 focus:ring-slate-400'}`}>
-            <Search className="w-4 h-4 mr-2" />조회
-        </button>
-        <button onClick={handleLogout} title="로그아웃" className="px-3 py-3 rounded-lg text-sm font-semibold bg-slate-200 text-slate-700 hover:bg-red-100 hover:text-red-600 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-400">
-            <LogOut className="w-4 h-4"/>
-        </button>
+      <button onClick={() => setCurrentPage('entry')} className={`flex items-center justify-center px-5 py-3 rounded-lg text-sm font-semibold transition-all duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 ${currentPage === 'entry' ? 'bg-blue-600 text-white shadow-md hover:bg-blue-700 focus:ring-blue-400' : 'bg-slate-200 text-slate-700 hover:bg-slate-300 focus:ring-slate-400'}`}>
+        <FileText className="w-4 h-4 mr-2" />입력
+      </button>
+      <button onClick={() => setCurrentPage('query')} className={`flex items-center justify-center px-5 py-3 rounded-lg text-sm font-semibold transition-all duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 ${currentPage === 'query' ? 'bg-blue-600 text-white shadow-md hover:bg-blue-700 focus:ring-blue-400' : 'bg-slate-200 text-slate-700 hover:bg-slate-300 focus:ring-slate-400'}`}>
+        <Search className="w-4 h-4 mr-2" />조회
+      </button>
+      {/* 통합된 로그아웃 핸들러를 사용하는 버튼 */}
+      <button onClick={handleLogout} title="로그아웃" className="px-3 py-3 rounded-lg text-sm font-semibold bg-slate-200 text-slate-700 hover:bg-red-100 hover:text-red-600 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-400">
+        <LogOut className="w-4 h-4" />
+      </button>
     </nav>
   );
-
-// 로그아웃(초기화)을 처리하는 함수입니다.
-  const handleLogout = () => {
-    // Firebase의 인증 서비스를 가져옵니다.
-    const auth = getAuth();
-    // 로그아웃을 실행합니다.
-    signOut(auth).then(() => {
-      // 로그아웃에 성공하면, 콘솔에 메시지를 표시하고 페이지를 새로고침하여
-      // 로그인 페이지가 나타나도록 합니다.
-      console.log("로그아웃 성공! 로그인 페이지로 돌아갑니다.");
-      window.location.reload();
-    }).catch((error) => {
-      // 로그아웃에 실패하면, 콘솔에 오류 메시지를 표시합니다.
-      console.error("로그아웃 중 오류 발생:", error);
-    });
-  };
 
   return (
     <div className="min-h-screen bg-slate-100 font-sans flex flex-col">
       <header className="bg-white shadow-sm sticky top-0 z-50">
-          <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-              <div className="flex items-center text-2xl font-bold text-slate-800">
-                  <Building className="w-7 h-7 mr-3 text-blue-600" />교회 주차 정산
-              </div>
-
-{/* 찾기 쉬운 곳에 이 버튼 코드를 추가하세요. */}
-<button 
-  onClick={handleLogout} 
-  className="bg-yellow-500 text-white font-bold py-2 px-4 rounded-lg shadow-md hover:bg-yellow-600 transition-colors"
->
-  앱 초기화 (강제 로그아웃)
-</button>
-
-              {navigationButtons}
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
+          <div className="flex items-center text-2xl font-bold text-slate-800">
+            <Building className="w-7 h-7 mr-3 text-blue-600" />교회 주차 정산
           </div>
+          {/* 네비게이션 버튼들을 여기에 렌더링합니다. */}
+          {navigationButtons}
+        </div>
       </header>
       <main className="container mx-auto p-4 sm:p-6 lg:p-8 flex-grow w-full">
-        {authError && 
-            <div className="p-4 mb-6 text-red-700 bg-red-100 rounded-lg shadow-md max-w-4xl mx-auto text-center">
-                <strong>인증 오류</strong>
-                <p className="mt-1 text-sm">{authError}</p>
-            </div>
+        {authError &&
+          <div className="p-4 mb-6 text-red-700 bg-red-100 rounded-lg shadow-md max-w-4xl mx-auto text-center">
+            <strong>인증 오류</strong>
+            <p className="mt-1 text-sm">{authError}</p>
+          </div>
         }
-        {dbError && 
-            <div className="p-4 mb-6 text-red-700 bg-red-100 rounded-lg shadow-md max-w-4xl mx-auto text-center">
-                <strong>데이터베이스 오류</strong>
-                <p className="mt-1 text-sm">{dbError}</p>
-            </div>
+        {dbError &&
+          <div className="p-4 mb-6 text-red-700 bg-red-100 rounded-lg shadow-md max-w-4xl mx-auto text-center">
+            <strong>데이터베이스 오류</strong>
+            <p className="mt-1 text-sm">{dbError}</p>
+          </div>
         }
         {currentPage === 'entry' && <EntryForm db={db} userId={userId} setDbError={setDbError} appId={firebaseConfig.appId} />}
         {currentPage === 'query' && <QueryPage db={db} userId={userId} setDbError={setDbError} appId={firebaseConfig.appId} geminiApiKey={geminiApiKey} />}
