@@ -838,6 +838,22 @@ function App() {
     </nav>
   );
 
+// 로그아웃(초기화)을 처리하는 함수입니다.
+  const handleLogout = () => {
+    // Firebase의 인증 서비스를 가져옵니다.
+    const auth = getAuth();
+    // 로그아웃을 실행합니다.
+    signOut(auth).then(() => {
+      // 로그아웃에 성공하면, 콘솔에 메시지를 표시하고 페이지를 새로고침하여
+      // 로그인 페이지가 나타나도록 합니다.
+      console.log("로그아웃 성공! 로그인 페이지로 돌아갑니다.");
+      window.location.reload();
+    }).catch((error) => {
+      // 로그아웃에 실패하면, 콘솔에 오류 메시지를 표시합니다.
+      console.error("로그아웃 중 오류 발생:", error);
+    });
+  };
+
   return (
     <div className="min-h-screen bg-slate-100 font-sans flex flex-col">
       <header className="bg-white shadow-sm sticky top-0 z-50">
@@ -845,6 +861,15 @@ function App() {
               <div className="flex items-center text-2xl font-bold text-slate-800">
                   <Building className="w-7 h-7 mr-3 text-blue-600" />교회 주차 정산
               </div>
+
+{/* 찾기 쉬운 곳에 이 버튼 코드를 추가하세요. */}
+<button 
+  onClick={handleLogout} 
+  className="bg-yellow-500 text-white font-bold py-2 px-4 rounded-lg shadow-md hover:bg-yellow-600 transition-colors"
+>
+  앱 초기화 (강제 로그아웃)
+</button>
+
               {navigationButtons}
           </div>
       </header>
