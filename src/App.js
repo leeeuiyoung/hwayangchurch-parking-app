@@ -503,8 +503,9 @@ function QueryPage({ db, userId, setDbError, appId, geminiApiKey }) {
         }
     }, [userId, db, appId, setDbError, searchName, searchStartDate, searchEndDate, searchParkingLocation]);
     
-    // [수정] 세션 데이터를 localStorage가 아닌 Firestore에서 가져오도록 변경
+    // [수정] 세션 데이터를 Firestore와 동기화하고, localStorage 데이터를 이전하는 로직 추가
     useEffect(() => {
+        // 현재 진행중인 세션은 localStorage에서 계속 관리
         const localRecordingSession = localStorage.getItem('parkingRecordingSession');
         if (localRecordingSession) {
             setRecordingSession(JSON.parse(localRecordingSession));
@@ -512,6 +513,45 @@ function QueryPage({ db, userId, setDbError, appId, geminiApiKey }) {
 
         if (!db || !appId) return;
 
+        // --- 1. 이전 버전의 localStorage 데이터를 Firestore로 옮기는 로직 ---
+        const migrateOldSessions = async () => {
+            const oldSessionsJSON = localStorage.getItem('completedParkingSessions');
+            if (oldSessionsJSON) {
+                try {
+                    const oldSessions = JSON.parse(oldSessionsJSON);
+                    if (Array.isArray(oldSessions) && oldSessions.length > 0) {
+                        console.log(`이전 데이터 ${oldSessions.length}건을 발견했습니다. 데이터베이스로 옮깁니다...`);
+                        const sessionsRef = collection(db, `/artifacts/${appId}/public/data/parkingSessions`);
+                        const batch = writeBatch(db);
+                        
+                        oldSessions.forEach(session => {
+                            if (session.startTime && session.endTime) {
+                                const newSessionRef = doc(collection(db, `/artifacts/${appId}/public/data/parkingSessions`));
+                                batch.set(newSessionRef, {
+                                    startTime: session.startTime,
+                                    endTime: session.endTime,
+                                    migrated: true 
+                                });
+                            }
+                        });
+                        
+                        await batch.commit();
+                        console.log("데이터 이전 완료.");
+                        localStorage.removeItem('completedParkingSessions'); // 성공 시 이전 데이터 삭제
+                        setMessage("이전 기기에 저장된 '완료된 기록'을 성공적으로 가져왔습니다.");
+                    } else {
+                        localStorage.removeItem('completedParkingSessions'); // 유효하지 않은 데이터는 삭제
+                    }
+                } catch (error) {
+                    console.error("이전 세션 데이터 이전 실패:", error);
+                    setDbError("이전 기록을 가져오는 중 오류가 발생했습니다.");
+                    // 실패 시 데이터를 지우지 않도록 주석 처리
+                    // localStorage.removeItem('completedParkingSessions');
+                }
+            }
+        };
+
+        // --- 2. Firestore의 세션 데이터를 실시간으로 구독 ---
         const sessionsRef = collection(db, `/artifacts/${appId}/public/data/parkingSessions`);
         const q = query(sessionsRef);
         
@@ -522,6 +562,8 @@ function QueryPage({ db, userId, setDbError, appId, geminiApiKey }) {
             });
             sessions.sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
             setCompletedSessions(sessions);
+             // 마이그레이션 함수를 여기서 한번만 호출 (리스너가 처음 연결될 때)
+             migrateOldSessions();
         }, (error) => {
             console.error("세션 데이터 실시간 로드 오류:", error);
             setDbError("세션 목록을 불러오는 중 오류가 발생했습니다.");
@@ -532,14 +574,13 @@ function QueryPage({ db, userId, setDbError, appId, geminiApiKey }) {
 
     const handleStartRecording = () => {
         const startTime = new Date().toISOString();
-        const session = { id: Date.now(), startTime }; // id는 임시로 사용
+        const session = { id: Date.now(), startTime }; 
         localStorage.setItem('parkingRecordingSession', JSON.stringify(session));
         setRecordingSession(session);
         setSearchStartDate(startTime.split('T')[0]);
         setMessage(`기록이 시작되었습니다: ${new Date(startTime).toLocaleString('ko-KR')}`);
     };
 
-    // [수정] 세션 데이터를 localStorage가 아닌 Firestore에 저장
     const handleStopRecording = async () => {
         if (recordingSession) {
             const endTime = new Date().toISOString();
@@ -551,7 +592,6 @@ function QueryPage({ db, userId, setDbError, appId, geminiApiKey }) {
             try {
                 const sessionsRef = collection(db, `/artifacts/${appId}/public/data/parkingSessions`);
                 await addDoc(sessionsRef, newCompletedSession);
-                // 성공 시 UI 업데이트는 onSnapshot 리스너가 자동으로 처리
                 
                 localStorage.removeItem('parkingRecordingSession');
                 setRecordingSession(null);
@@ -578,14 +618,12 @@ function QueryPage({ db, userId, setDbError, appId, geminiApiKey }) {
         handleSearch({ startDate: session.startTime, endDate: session.endTime, name: '', location: ALL_LOCATIONS_VALUE });
     };
     
-    // [수정] 세션 데이터를 localStorage가 아닌 Firestore에서 삭제
     const handleDeleteSession = async (sessionIdToDelete, e) => {
         e.stopPropagation();
         if (!db || !appId) return;
         try {
             const sessionDocRef = doc(db, `/artifacts/${appId}/public/data/parkingSessions`, sessionIdToDelete);
             await deleteDoc(sessionDocRef);
-            // 성공 시 UI 업데이트는 onSnapshot 리스너가 자동으로 처리
         } catch (error) {
             console.error("세션 삭제 오류:", error);
             setDbError("세션 삭제 중 오류가 발생했습니다.");
