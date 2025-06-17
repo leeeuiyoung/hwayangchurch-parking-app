@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { initializeApp, getApps } from 'firebase/app';
-import { getFirestore, collection, addDoc, getDocs, query, writeBatch, serverTimestamp, deleteDoc, doc } from 'firebase/firestore';
+import { getFirestore, collection, addDoc, getDocs, query, onSnapshot, writeBatch, serverTimestamp, deleteDoc, doc } from 'firebase/firestore';
 import { getAuth, onAuthStateChanged, signOut, signInWithEmailAndPassword } from 'firebase/auth';
 import { Save, Search, CalendarDays, Users, DollarSign, Clock, Building, Banknote, UserCircle, FileText, Trash2, AlertTriangle, ListChecks, Download, X, Sparkles, Copy, Loader2, PlayCircle, StopCircle, Info, History, LogOut, RotateCcw } from 'lucide-react';
 
@@ -503,40 +503,69 @@ function QueryPage({ db, userId, setDbError, appId, geminiApiKey }) {
         }
     }, [userId, db, appId, setDbError, searchName, searchStartDate, searchEndDate, searchParkingLocation]);
     
+    // [수정] 세션 데이터를 localStorage가 아닌 Firestore에서 가져오도록 변경
     useEffect(() => {
-        const savedSession = localStorage.getItem('parkingRecordingSession');
-        if (savedSession) setRecordingSession(JSON.parse(savedSession));
+        const localRecordingSession = localStorage.getItem('parkingRecordingSession');
+        if (localRecordingSession) {
+            setRecordingSession(JSON.parse(localRecordingSession));
+        }
+
+        if (!db || !appId) return;
+
+        const sessionsRef = collection(db, `/artifacts/${appId}/public/data/parkingSessions`);
+        const q = query(sessionsRef);
         
-        const savedCompletedSessions = localStorage.getItem('completedParkingSessions');
-        if (savedCompletedSessions) setCompletedSessions(JSON.parse(savedCompletedSessions));
-    }, []);
+        const unsubscribe = onSnapshot(q, (querySnapshot) => {
+            const sessions = [];
+            querySnapshot.forEach((doc) => {
+                sessions.push({ id: doc.id, ...doc.data() });
+            });
+            sessions.sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
+            setCompletedSessions(sessions);
+        }, (error) => {
+            console.error("세션 데이터 실시간 로드 오류:", error);
+            setDbError("세션 목록을 불러오는 중 오류가 발생했습니다.");
+        });
+
+        return () => unsubscribe(); // 컴포넌트 언마운트 시 리스너 정리
+    }, [db, appId, setDbError]);
 
     const handleStartRecording = () => {
         const startTime = new Date().toISOString();
-        const session = { id: Date.now(), startTime };
+        const session = { id: Date.now(), startTime }; // id는 임시로 사용
         localStorage.setItem('parkingRecordingSession', JSON.stringify(session));
         setRecordingSession(session);
         setSearchStartDate(startTime.split('T')[0]);
         setMessage(`기록이 시작되었습니다: ${new Date(startTime).toLocaleString('ko-KR')}`);
     };
 
-    const handleStopRecording = () => {
+    // [수정] 세션 데이터를 localStorage가 아닌 Firestore에 저장
+    const handleStopRecording = async () => {
         if (recordingSession) {
             const endTime = new Date().toISOString();
-            const newCompletedSession = { ...recordingSession, endTime };
+            const newCompletedSession = { 
+                startTime: recordingSession.startTime, 
+                endTime: endTime 
+            };
             
-            const updatedCompletedSessions = [newCompletedSession, ...completedSessions];
-            setCompletedSessions(updatedCompletedSessions);
-            localStorage.setItem('completedParkingSessions', JSON.stringify(updatedCompletedSessions));
+            try {
+                const sessionsRef = collection(db, `/artifacts/${appId}/public/data/parkingSessions`);
+                await addDoc(sessionsRef, newCompletedSession);
+                // 성공 시 UI 업데이트는 onSnapshot 리스너가 자동으로 처리
+                
+                localStorage.removeItem('parkingRecordingSession');
+                setRecordingSession(null);
             
-            localStorage.removeItem('parkingRecordingSession');
-            setRecordingSession(null);
-            
-            setSearchStartDate(newCompletedSession.startTime);
-            setSearchEndDate(newCompletedSession.endTime);
-            setMessage(`기록이 중단되었습니다. 기간이 자동으로 설정되었습니다.`);
-            
-            handleSearch({startDate: newCompletedSession.startTime, endDate: newCompletedSession.endTime, name: '', location: ALL_LOCATIONS_VALUE});
+                setSearchStartDate(newCompletedSession.startTime);
+                setSearchEndDate(newCompletedSession.endTime);
+                setMessage(`기록이 중단되었습니다. 기간이 자동으로 설정되었습니다.`);
+                
+                handleSearch({startDate: newCompletedSession.startTime, endDate: newCompletedSession.endTime, name: '', location: ALL_LOCATIONS_VALUE});
+
+            } catch (error) {
+                console.error("세션 저장 오류:", error);
+                setDbError("세션 저장 중 오류가 발생했습니다.");
+            }
         }
     };
     
@@ -548,12 +577,19 @@ function QueryPage({ db, userId, setDbError, appId, geminiApiKey }) {
         setSelectedSession(session.id);
         handleSearch({ startDate: session.startTime, endDate: session.endTime, name: '', location: ALL_LOCATIONS_VALUE });
     };
-
-    const handleDeleteSession = (sessionIdToDelete, e) => {
+    
+    // [수정] 세션 데이터를 localStorage가 아닌 Firestore에서 삭제
+    const handleDeleteSession = async (sessionIdToDelete, e) => {
         e.stopPropagation();
-        const updatedSessions = completedSessions.filter(session => session.id !== sessionIdToDelete);
-        setCompletedSessions(updatedSessions);
-        localStorage.setItem('completedParkingSessions', JSON.stringify(updatedSessions));
+        if (!db || !appId) return;
+        try {
+            const sessionDocRef = doc(db, `/artifacts/${appId}/public/data/parkingSessions`, sessionIdToDelete);
+            await deleteDoc(sessionDocRef);
+            // 성공 시 UI 업데이트는 onSnapshot 리스너가 자동으로 처리
+        } catch (error) {
+            console.error("세션 삭제 오류:", error);
+            setDbError("세션 삭제 중 오류가 발생했습니다.");
+        }
     };
 
     const handleClearSearch = () => {
@@ -576,7 +612,7 @@ function QueryPage({ db, userId, setDbError, appId, geminiApiKey }) {
     const formatDateTime = (isoString) => {
         if (!isoString) return '';
         const date = new Date(isoString);
-        if (isNaN(date)) return isoString; // Handle invalid date strings
+        if (isNaN(date)) return isoString;
         return date.toLocaleString('ko-KR', {
             year: 'numeric', month: '2-digit', day: '2-digit',
             hour: '2-digit', minute: '2-digit', hour12: false
